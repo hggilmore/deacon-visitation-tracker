@@ -1,0 +1,623 @@
+<!--
+CHANGELOG
+v1.1.1 - CSV import now reads church directory exports: Last, First names, Mobile Phone fallback, full address, skips disabled and blank rows.
+v1.1.0 - Multi-user safe saving (merges with JSONBin instead of overwriting); member groups; contact reasons; Prayer List tab; Monthly Deacon Report; CSV import of names.
+v1.0.1 - Added Card Sent as a contact type (history, reports, filters, CSV).
+v1.0.0 - First release: log phone calls, hospital visits, home visits and other visits; member list; reports with print and CSV; JSONBin sync with local backup.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deacon Visitation Tracker</title>
+<style>
+:root{--blue:#0086FF;--purple:#410942;--copper:#A95D4D;--lav:#E9BFF5;--navy:#10152B;--gray:#3F3F3F;--bg:#F7F3FA;--line:#DCCFE3}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--gray);font-size:16px}
+header{background:var(--purple);color:#fff;padding:14px 16px}
+header h1{margin:0;font-size:1.25rem}
+header small{color:var(--lav)}
+nav{display:flex;background:var(--navy);overflow-x:auto}
+nav button{flex:1;min-width:90px;background:none;border:0;color:#cfd3e6;padding:13px 8px;font-size:1rem;cursor:pointer;border-bottom:4px solid transparent}
+nav button.on{color:#fff;border-bottom-color:var(--blue);font-weight:600}
+main{max-width:980px;margin:0 auto;padding:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+h2{margin:0 0 10px;color:var(--purple);font-size:1.15rem}
+label{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}
+input,select,textarea{width:100%;padding:10px;border:1px solid #bfb3c8;border-radius:8px;font-size:1rem;font-family:inherit;background:#fff;color:var(--gray)}
+textarea{min-height:70px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:620px){.row,.row3{grid-template-columns:1fr}}
+.btn{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:11px 16px;font-size:1rem;cursor:pointer;margin:10px 8px 0 0}
+.btn.alt{background:var(--purple)}
+.btn.ghost{background:#fff;color:var(--purple);border:1px solid var(--purple)}
+.btn.red{background:var(--copper)}
+.btn.sm{padding:6px 10px;font-size:.85rem;margin:0 6px 0 0}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.item:first-child{border-top:0}
+.tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:.8rem;color:#fff;margin-right:6px}
+.t-Phone{background:var(--blue)}.t-Hospital{background:var(--copper)}.t-Home{background:var(--purple)}.t-Card{background:var(--navy)}.t-Other{background:var(--gray)}
+.muted{color:#777;font-size:.88rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:var(--lav);border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font-size:1.6rem;color:var(--purple)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--lav);color:var(--purple)}
+.scroll{overflow-x:auto}
+.hide{display:none}
+#status{font-size:.85rem;margin-top:6px}
+.ok{color:#1b7a3a}.bad{color:#b3261e}
+.overlay{position:fixed;inset:0;background:rgba(16,21,43,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:14px}
+.modal{background:#fff;border-radius:12px;padding:18px;max-width:440px;width:100%;max-height:90vh;overflow:auto}
+.modal h3{margin:0 0 8px;color:var(--purple)}
+.modal .acts{text-align:right}
+.modal .btn{margin:12px 0 0 8px}
+.printonly{display:none}
+.chips label{display:inline-block;font-weight:400;margin:4px 10px 4px 0}
+.chips input{width:auto;margin-right:4px}
+.gtag{display:inline-block;background:var(--lav);color:var(--purple);border-radius:12px;padding:1px 8px;font-size:.78rem;margin-right:4px}
+@media print{
+ header,nav,.noprint,.btn{display:none!important}
+ body{background:#fff}.card{border:0;padding:0}
+ .printonly{display:block}
+ .tag{color:#000;border:1px solid #000;background:#fff!important}
+}
+</style>
+</head>
+<body>
+<header><h1>Deacon Visitation Tracker</h1><small>Mt. Zion Baptist Church</small></header>
+<nav>
+ <button data-tab="log" class="on">Log a Visit</button>
+ <button data-tab="history">History</button>
+ <button data-tab="members">Members</button>
+ <button data-tab="prayer">Prayer List</button>
+ <button data-tab="reports">Reports</button>
+ <button data-tab="settings">Settings</button>
+</nav>
+<main>
+
+<section id="tab-log">
+ <div class="card">
+  <h2 id="logTitle">Log a Visit or Call</h2>
+  <input type="hidden" id="visitId">
+  <label>Type</label>
+  <select id="vType">
+   <option>Phone Call</option><option>Home Visit</option><option>Hospital Visit</option><option>Card Sent</option><option>Other Visit</option>
+  </select>
+  <label>Reason</label>
+  <select id="vReason"></select>
+  <label>Member</label>
+  <select id="vMember"></select>
+  <button class="btn ghost sm" style="margin-top:8px" onclick="openMemberModal()">+ Add a new name</button>
+  <div class="row">
+   <div><label>Date</label><input type="date" id="vDate"></div>
+   <div><label>Time</label><input type="time" id="vTime"></div>
+  </div>
+  <div class="row">
+   <div><label>Deacon</label><input id="vDeacon" list="deaconList" placeholder="Who made the contact"><datalist id="deaconList"></datalist></div>
+   <div id="locWrap"><label id="locLabel">Location or hospital</label><input id="vLoc" placeholder="Optional"></div>
+  </div>
+  <label>Notes (prayer needs, how they are doing)</label>
+  <textarea id="vNotes"></textarea>
+  <label>Follow up needed?</label>
+  <select id="vFollow"><option value="No">No</option><option value="Yes">Yes</option></select>
+  <div id="followDateWrap" class="hide"><label>Follow up by</label><input type="date" id="vFollowDate"></div>
+  <button class="btn" onclick="saveVisit()">Save</button>
+  <button class="btn ghost" onclick="resetVisitForm()">Clear</button>
+ </div>
+ <div class="card">
+  <h2>Follow ups waiting</h2>
+  <div id="followList"></div>
+ </div>
+</section>
+
+<section id="tab-history" class="hide">
+ <div class="card">
+  <h2>History</h2>
+  <div class="row3">
+   <div><label>Type</label><select id="hType"></select></div>
+   <div><label>Member</label><select id="hMember"></select></div>
+   <div><label>Search notes</label><input id="hSearch" placeholder="Type to search"></div>
+  </div>
+  <div id="histList" style="margin-top:10px"></div>
+ </div>
+</section>
+
+<section id="tab-members" class="hide">
+ <div class="card">
+  <h2>Members</h2>
+  <button class="btn sm alt" onclick="openMemberModal()">+ Add name</button>
+  <button class="btn sm ghost" onclick="openBulkModal()">Add several names</button>
+  <button class="btn sm ghost" onclick="$('importFile').click()">Import spreadsheet (CSV)</button>
+  <input type="file" id="importFile" accept=".csv,text/csv" class="hide">
+  <input id="mSearch" placeholder="Search names" style="margin-top:10px"><label>Group</label><select id="mGroup"></select>
+  <div id="memList" style="margin-top:8px"></div>
+ </div>
+</section>
+
+<section id="tab-reports" class="hide">
+ <div class="card noprint">
+  <h2>Report Filters</h2>
+  <div class="row3">
+   <div><label>From</label><input type="date" id="rFrom"></div>
+   <div><label>To</label><input type="date" id="rTo"></div>
+   <div><label>Type</label><select id="rType"></select></div>
+  </div>
+  <div class="row">
+   <div><label>Deacon</label><select id="rDeacon"></select></div>
+   <div><label>Not contacted in the last (days)</label><input type="number" id="rDays" value="60" min="1"></div>
+  </div>
+  <div class="row">
+   <div><label>Reason</label><select id="rReason"></select></div>
+   <div><label>Member group</label><select id="rGroup"></select></div>
+  </div>
+  <button class="btn" onclick="runReport()">Run Report</button>
+  <button class="btn alt" onclick="window.print()">Print</button>
+  <button class="btn ghost" onclick="exportCSV()">Download CSV</button>
+  <hr style="border:0;border-top:1px solid var(--line);margin-top:16px">
+  <label>Monthly Deacon Report (one page for the board, with active prayer list)</label>
+  <div class="row"><input type="month" id="rMonth"><div><button class="btn alt" style="margin-top:0" onclick="monthlyReport()">Build Monthly Report</button></div></div>
+ </div>
+ <div class="card" id="reportOut"><p class="muted">Choose your dates and press Run Report.</p></div>
+</section>
+
+<section id="tab-prayer" class="hide">
+ <div class="card">
+  <h2>Prayer List</h2>
+  <div class="printonly"><b>Mt. Zion Baptist Church Prayer List</b> <span id="pPrintDate"></span></div>
+  <div class="noprint">
+   <button class="btn sm alt" onclick="openPrayerModal()">+ Add request</button>
+   <button class="btn sm ghost" onclick="window.print()">Print</button>
+   <label>Show</label>
+   <select id="pShow"><option value="Active">Active requests</option><option value="Answered">Answered</option><option value="All">All</option></select>
+  </div>
+  <div id="prayList" style="margin-top:8px"></div>
+ </div>
+</section>
+
+<section id="tab-settings" class="hide">
+ <div class="card">
+  <h2>Saving your data</h2>
+  <p class="muted">Data is always saved on this device. To share it between devices and keep a backup online, connect JSONBin below. Test this from your github.io address, not inside Claude.</p>
+  <label>JSONBin Master Key</label>
+  <input id="sKey" type="password" placeholder="Paste your X-Master-Key">
+  <label>Bin ID</label>
+  <input id="sBin" placeholder="Paste a Bin ID, or press Create New Bin">
+  <button class="btn" onclick="saveSettings()">Save Settings</button>
+  <button class="btn alt" onclick="createBin()">Create New Bin</button>
+  <button class="btn ghost" onclick="pullCloud(true)">Load from JSONBin</button>
+  <button class="btn ghost" onclick="pushCloud(true)">Send to JSONBin</button>
+  <div id="status"></div>
+ </div>
+ <div class="card">
+  <h2>Backup file</h2>
+  <button class="btn alt" onclick="downloadBackup()">Download Backup</button>
+  <button class="btn ghost" onclick="document.getElementById('restoreFile').click()">Restore from Backup</button>
+  <input type="file" id="restoreFile" accept=".json" class="hide">
+  <p class="muted">Visit notes can be private. Keep your JSONBin key and bin private, and share this page only with the deacons who need it.</p>
+ </div>
+</section>
+
+</main>
+
+<script>
+var LS='deaconVisits_v1', LSC='deaconVisits_cfg';
+var db={members:[],visits:[],prayers:[],deleted:[]};
+var GROUPS=['Shut-in','Senior','Sick','Bereaved','New Member','Other'];
+var REASONS=['Routine check-in','Illness','Surgery','Hospitalized','Death in family','New baby','Encouragement','Other'];
+var cfg={key:'',bin:''};
+var lastReport=[];
+var TYPES=['Phone Call','Home Visit','Hospital Visit','Card Sent','Other Visit'];
+var PLURAL={'Phone Call':'Phone Calls','Home Visit':'Home Visits','Hospital Visit':'Hospital Visits','Card Sent':'Cards Sent','Other Visit':'Other Visits'};
+
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function $(id){return document.getElementById(id)}
+function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function nowTime(){var d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
+function fmtDate(s){if(!s)return '';var p=s.split('-');return new Date(p[0],p[1]-1,p[2]).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
+function fmtTime(t){if(!t)return '';var p=t.split(':'),h=+p[0],ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+p[1]+' '+ap}
+function tcls(t){return t.indexOf('Card')===0?'Card':t.indexOf('Phone')===0?'Phone':t.indexOf('Hospital')===0?'Hospital':t.indexOf('Home')===0?'Home':'Other'}
+function memName(id){var m=db.members.find(function(x){return x.id===id});return m?m.name:'(removed)'}
+
+/* ---------- modals ---------- */
+function modal(title,bodyHtml,buttons){
+  var o=document.createElement('div');o.className='overlay';
+  o.innerHTML='<div class="modal"><h3>'+esc(title)+'</h3><div>'+bodyHtml+'</div><div class="acts"></div></div>';
+  var acts=o.querySelector('.acts');
+  buttons.forEach(function(b){
+    var el=document.createElement('button');el.className='btn '+(b.cls||'');el.textContent=b.text;
+    el.onclick=function(){var keep=b.fn&&b.fn(o)===false;if(!keep)o.remove()};
+    acts.appendChild(el);
+  });
+  document.body.appendChild(o);
+  var f=o.querySelector('input,textarea');if(f)f.focus();
+  return o;
+}
+function say(title,msg){modal(title,'<p>'+esc(msg)+'</p>',[{text:'OK'}])}
+function ask(title,msg,yesText,fn){modal(title,'<p>'+esc(msg)+'</p>',[{text:'Cancel',cls:'ghost'},{text:yesText||'Yes',cls:'red',fn:fn}])}
+
+/* ---------- storage ---------- */
+function loadLocal(){
+  try{var d=JSON.parse(localStorage.getItem(LS));if(d&&d.members&&d.visits)db=d}catch(e){}
+  norm();
+  try{var c=JSON.parse(localStorage.getItem(LSC));if(c)cfg=c}catch(e){}
+}
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(db))}catch(e){}}
+function norm(){db.prayers=db.prayers||[];db.deleted=db.deleted||[]}
+function mergeList(a,b,dead){
+  var map={};
+  b.concat(a).forEach(function(x){
+    if(dead.indexOf(x.id)>-1)return;
+    var c=map[x.id];
+    if(!c||(x.ts||0)>=(c.ts||0))map[x.id]=x;
+  });
+  return Object.keys(map).map(function(k){return map[k]});
+}
+function mergeDb(r){
+  norm();
+  var dead=db.deleted.concat(r.deleted||[]).filter(function(v,i,s){return s.indexOf(v)===i});
+  db.members=mergeList(db.members,r.members||[],dead);
+  db.visits=mergeList(db.visits,r.visits||[],dead);
+  db.prayers=mergeList(db.prayers,r.prayers||[],dead);
+  db.deleted=dead;
+}
+function persist(){db.updated=new Date().toISOString();saveLocal();pushCloud(false)}
+
+function setStatus(msg,good){var s=$('status');s.textContent=msg;s.className=good?'ok':'bad'}
+function cloudReady(){return cfg.key&&cfg.bin}
+function pushCloud(show){
+  if(!cloudReady()){if(show)setStatus('Add your Master Key and Bin ID first.',false);return}
+  fetch('https://api.jsonbin.io/v3/b/'+cfg.bin+'/latest',{headers:{'X-Master-Key':cfg.key,'X-Bin-Meta':'false'}})
+  .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+  .then(function(r){
+    if(r&&r.members&&r.visits){mergeDb(r);saveLocal();renderAll()}
+    return fetch('https://api.jsonbin.io/v3/b/'+cfg.bin,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':cfg.key},body:JSON.stringify(db)});
+  })
+  .then(function(r){if(!r.ok)throw new Error(r.status);setStatus('Saved to JSONBin '+new Date().toLocaleTimeString(),true)})
+  .catch(function(e){setStatus('Could not reach JSONBin ('+e.message+'). Data is safe on this device.',false)});
+}
+function pullCloud(show){
+  if(!cloudReady()){if(show)setStatus('Add your Master Key and Bin ID first.',false);return}
+  fetch('https://api.jsonbin.io/v3/b/'+cfg.bin+'/latest',{headers:{'X-Master-Key':cfg.key,'X-Bin-Meta':'false'}})
+  .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+  .then(function(d){
+    if(d&&d.members&&d.visits){mergeDb(d);saveLocal();renderAll();setStatus('Loaded from JSONBin '+new Date().toLocaleTimeString(),true)}
+    else setStatus('That bin is empty. Press Send to JSONBin to fill it.',false);
+  })
+  .catch(function(e){setStatus('Could not load ('+e.message+'). Check the key and Bin ID.',false)});
+}
+function createBin(){
+  var key=$('sKey').value.trim();
+  if(!key){setStatus('Paste your Master Key first.',false);return}
+  fetch('https://api.jsonbin.io/v3/b',{method:'POST',headers:{'Content-Type':'application/json','X-Master-Key':key,'X-Bin-Name':'deacon-visitations','X-Bin-Private':'true'},body:JSON.stringify(db)})
+  .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+  .then(function(d){$('sBin').value=d.metadata.id;cfg={key:key,bin:d.metadata.id};localStorage.setItem(LSC,JSON.stringify(cfg));setStatus('New bin created and saved. Bin ID: '+d.metadata.id,true)})
+  .catch(function(e){setStatus('Could not create the bin ('+e.message+').',false)});
+}
+function saveSettings(){
+  cfg={key:$('sKey').value.trim(),bin:$('sBin').value.trim()};
+  localStorage.setItem(LSC,JSON.stringify(cfg));
+  setStatus('Settings saved on this device.',true);
+}
+function downloadBackup(){
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));
+  a.download='deacon-visits-backup-'+today()+'.json';a.click();
+}
+$('restoreFile').addEventListener('change',function(e){
+  var f=e.target.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{var d=JSON.parse(r.result);if(!d.members||!d.visits)throw 0;
+      ask('Restore backup','This replaces everything currently in the app with the backup file. Continue?','Restore',function(){db=d;norm();persist();renderAll()});
+    }catch(x){say('Problem','That file is not a valid backup.')}
+  };r.readAsText(f);e.target.value='';
+});
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('nav button').forEach(function(b){
+  b.onclick=function(){
+    document.querySelectorAll('nav button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');
+    ['log','history','members','prayer','reports','settings'].forEach(function(t){$('tab-'+t).classList.toggle('hide',t!==b.dataset.tab)});
+    if(b.dataset.tab==='history')renderHistory();
+    if(b.dataset.tab==='members')renderMembers();
+    if(b.dataset.tab==='prayer')renderPrayer();
+  };
+});
+
+/* ---------- members ---------- */
+function sortedMembers(){return db.members.slice().sort(function(a,b){return a.name.localeCompare(b.name)})}
+function openMemberModal(id){
+  var m=id?db.members.find(function(x){return x.id===id}):{name:'',phone:'',address:'',notes:''};
+  modal(id?'Edit name':'Add a name',
+   '<label>Full name</label><input id="mName" value="'+esc(m.name)+'">'+
+   '<label>Phone</label><input id="mPhone" type="tel" value="'+esc(m.phone)+'">'+
+   '<label>Address</label><input id="mAddr" value="'+esc(m.address)+'">'+
+   '<label>Notes (caregiver, special needs, etc.)</label><textarea id="mNotes">'+esc(m.notes)+'</textarea>'+
+   '<label>Groups</label><div class="chips">'+GROUPS.map(function(g){return '<label><input type="checkbox" class="mg" value="'+g+'"'+((m.groups||[]).indexOf(g)>-1?' checked':'')+'>'+g+'</label>'}).join('')+'</div>',
+   [{text:'Cancel',cls:'ghost'},{text:'Save',fn:function(){
+     var n=$('mName').value.trim();
+     if(!n){$('mName').style.borderColor='#b3261e';return false}
+     if(id){m.name=n;m.phone=$('mPhone').value.trim();m.address=$('mAddr').value.trim();m.notes=$('mNotes').value.trim();m.groups=getGroups();m.ts=Date.now()}
+     else{var nm={id:uid(),name:n,phone:$('mPhone').value.trim(),address:$('mAddr').value.trim(),notes:$('mNotes').value.trim(),groups:getGroups(),ts:Date.now()};db.members.push(nm);window._newMember=nm.id}
+     persist();renderAll();
+     if(!id&&window._newMember){$('vMember').value=window._newMember;window._newMember=null}
+   }}]);
+}
+function getGroups(){return [].slice.call(document.querySelectorAll('.mg:checked')).map(function(x){return x.value})}
+function openBulkModal(){
+  modal('Add several names','<p class="muted">Type one name per line.</p><textarea id="bulk" style="min-height:160px"></textarea>',
+   [{text:'Cancel',cls:'ghost'},{text:'Add',fn:function(){
+     var lines=$('bulk').value.split('\n').map(function(s){return s.trim()}).filter(Boolean);
+     lines.forEach(function(n){if(!db.members.some(function(m){return m.name.toLowerCase()===n.toLowerCase()}))db.members.push({id:uid(),name:n,phone:'',address:'',notes:'',groups:[],ts:Date.now()})});
+     persist();renderAll();
+   }}]);
+}
+function deleteMember(id){
+  var count=db.visits.filter(function(v){return v.memberId===id}).length;
+  ask('Remove name',count?('This name has '+count+' logged contacts. Removing the name also removes those records. Continue?'):'Remove this name?','Remove',function(){
+    db.visits.forEach(function(v){if(v.memberId===id)db.deleted.push(v.id)});
+    db.prayers.forEach(function(p){if(p.memberId===id)db.deleted.push(p.id)});
+    db.deleted.push(id);
+    db.prayers=db.prayers.filter(function(p){return p.memberId!==id});
+    db.members=db.members.filter(function(m){return m.id!==id});
+    db.visits=db.visits.filter(function(v){return v.memberId!==id});
+    persist();renderAll();
+  });
+}
+function lastContact(id){
+  var v=db.visits.filter(function(x){return x.memberId===id}).sort(function(a,b){return (b.date+b.time).localeCompare(a.date+a.time)});
+  return v[0]||null;
+}
+function renderMembers(){
+  var q=$('mSearch').value.toLowerCase(),g=$('mGroup').value,h='';
+  sortedMembers().filter(function(m){return m.name.toLowerCase().indexOf(q)>-1&&(!g||(m.groups||[]).indexOf(g)>-1)}).forEach(function(m){
+    var lc=lastContact(m.id);
+    h+='<div class="item"><b>'+esc(m.name)+'</b>'+
+      (m.groups&&m.groups.length?'<div>'+m.groups.map(function(x){return '<span class="gtag">'+esc(x)+'</span>'}).join('')+'</div>':'')+
+      '<div class="muted">'+(m.phone?esc(m.phone)+'  ':'')+(m.address?esc(m.address):'')+'</div>'+
+      (m.notes?'<div class="muted">'+esc(m.notes)+'</div>':'')+
+      '<div class="muted">Last contact: '+(lc?esc(lc.type)+', '+fmtDate(lc.date):'none yet')+'</div>'+
+      '<div style="margin-top:6px"><button class="btn sm" onclick="startVisitFor(\''+m.id+'\')">Log contact</button>'+
+      '<button class="btn sm ghost" onclick="openMemberModal(\''+m.id+'\')">Edit</button>'+
+      '<button class="btn sm red" onclick="deleteMember(\''+m.id+'\')">Remove</button></div></div>';
+  });
+  $('memList').innerHTML=h||'<p class="muted">No names yet. Press Add name to begin.</p>';
+}
+$('mSearch').oninput=renderMembers;$('mGroup').onchange=renderMembers;
+function startVisitFor(id){document.querySelector('[data-tab=log]').click();resetVisitForm();$('vMember').value=id}
+
+/* ---------- visits ---------- */
+function fillSelects(){
+  var opts=sortedMembers().map(function(m){return '<option value="'+m.id+'">'+esc(m.name)+'</option>'}).join('');
+  var cur=$('vMember').value;
+  $('vMember').innerHTML=opts||'<option value="">Add a name first</option>';if(cur)$('vMember').value=cur;
+  var allT='<option value="">All types</option>'+TYPES.map(function(t){return '<option>'+t+'</option>'}).join('');
+  var hm='<option value="">All members</option>'+opts;
+  var ch=$('hType').value,cm=$('hMember').value;
+  $('hType').innerHTML=allT;$('hMember').innerHTML=hm;$('hType').value=ch;$('hMember').value=cm;
+  var cr=$('rType').value;$('rType').innerHTML=allT;$('rType').value=cr;
+  var ds=deacons();
+  $('deaconList').innerHTML=ds.map(function(d){return '<option value="'+esc(d)+'">'}).join('');
+  var cd=$('rDeacon').value;
+  $('rDeacon').innerHTML='<option value="">All deacons</option>'+ds.map(function(d){return '<option>'+esc(d)+'</option>'}).join('');$('rDeacon').value=cd;
+}
+function deacons(){var s={};db.visits.forEach(function(v){if(v.deacon)s[v.deacon]=1});return Object.keys(s).sort()}
+function resetVisitForm(){
+  $('visitId').value='';$('logTitle').textContent='Log a Visit or Call';
+  $('vType').value='Phone Call';$('vDate').value=today();$('vTime').value=nowTime();
+  $('vLoc').value='';$('vNotes').value='';$('vReason').value=REASONS[0];$('vFollow').value='No';$('vFollowDate').value='';
+  $('followDateWrap').classList.add('hide');
+  try{$('vDeacon').value=localStorage.getItem('deaconVisits_last')||''}catch(e){}
+  updateLoc();
+}
+function updateLoc(){
+  var t=$('vType').value;
+  $('locWrap').classList.toggle('hide',t==='Phone Call'||t==='Card Sent');
+  $('locLabel').textContent=t==='Hospital Visit'?'Hospital and room':t==='Home Visit'?'Address (optional)':'Location';
+}
+$('vType').onchange=updateLoc;
+$('vFollow').onchange=function(){$('followDateWrap').classList.toggle('hide',$('vFollow').value!=='Yes')};
+function saveVisit(){
+  if(!$('vMember').value){say('Name needed','Choose a member, or press Add a new name.');return}
+  if(!$('vDate').value){say('Date needed','Please enter the date.');return}
+  var id=$('visitId').value;
+  var rec={id:id||uid(),type:$('vType').value,memberId:$('vMember').value,date:$('vDate').value,time:$('vTime').value,
+    deacon:$('vDeacon').value.trim(),reason:$('vReason').value,ts:Date.now(),location:($('vType').value==='Phone Call'||$('vType').value==='Card Sent')?'':$('vLoc').value.trim(),notes:$('vNotes').value.trim(),
+    follow:$('vFollow').value==='Yes',followDate:$('vFollowDate').value,done:false};
+  if(id){var i=db.visits.findIndex(function(v){return v.id===id});rec.done=db.visits[i].done;db.visits[i]=rec}
+  else db.visits.push(rec);
+  try{localStorage.setItem('deaconVisits_last',rec.deacon)}catch(e){}
+  persist();renderAll();resetVisitForm();
+  say('Saved',rec.type+' for '+memName(rec.memberId)+' on '+fmtDate(rec.date)+' has been saved.');
+}
+function editVisit(id){
+  var v=db.visits.find(function(x){return x.id===id});if(!v)return;
+  document.querySelector('[data-tab=log]').click();
+  $('visitId').value=v.id;$('logTitle').textContent='Edit Record';
+  $('vType').value=v.type;$('vMember').value=v.memberId;$('vDate').value=v.date;$('vTime').value=v.time;
+  $('vDeacon').value=v.deacon;$('vReason').value=v.reason||REASONS[0];$('vLoc').value=v.location||'';$('vNotes').value=v.notes||'';
+  $('vFollow').value=v.follow?'Yes':'No';$('vFollowDate').value=v.followDate||'';
+  $('followDateWrap').classList.toggle('hide',!v.follow);updateLoc();window.scrollTo(0,0);
+}
+function deleteVisit(id){ask('Delete record','Delete this record? This cannot be undone.','Delete',function(){db.deleted.push(id);db.visits=db.visits.filter(function(v){return v.id!==id});persist();renderAll()})}
+function markDone(id){var v=db.visits.find(function(x){return x.id===id});v.done=true;v.ts=Date.now();persist();renderAll()}
+
+function visitHtml(v,actions){
+  return '<div class="item"><span class="tag t-'+tcls(v.type)+'">'+esc(v.type)+'</span><b>'+esc(memName(v.memberId))+'</b>'+
+   '<div class="muted">'+fmtDate(v.date)+(v.time?' at '+fmtTime(v.time):'')+(v.deacon?' by '+esc(v.deacon):'')+(v.reason?' | '+esc(v.reason):'')+(v.location?' | '+esc(v.location):'')+'</div>'+
+   (v.notes?'<div>'+esc(v.notes)+'</div>':'')+
+   (v.follow&&!v.done?'<div class="muted" style="color:var(--copper)">Follow up'+(v.followDate?' by '+fmtDate(v.followDate):'')+'</div>':'')+
+   (actions?'<div style="margin-top:6px">'+actions+'</div>':'')+'</div>';
+}
+function renderFollow(){
+  var l=db.visits.filter(function(v){return v.follow&&!v.done}).sort(function(a,b){return (a.followDate||'9999').localeCompare(b.followDate||'9999')});
+  $('followList').innerHTML=l.map(function(v){return visitHtml(v,'<button class="btn sm" onclick="markDone(\''+v.id+'\')">Mark done</button><button class="btn sm ghost" onclick="editVisit(\''+v.id+'\')">Edit</button>')}).join('')||'<p class="muted">Nothing waiting.</p>';
+}
+function renderHistory(){
+  var t=$('hType').value,m=$('hMember').value,q=$('hSearch').value.toLowerCase();
+  var l=db.visits.filter(function(v){return (!t||v.type===t)&&(!m||v.memberId===m)&&(!q||((v.notes||'')+(v.deacon||'')+memName(v.memberId)).toLowerCase().indexOf(q)>-1)})
+   .sort(function(a,b){return (b.date+b.time).localeCompare(a.date+a.time)});
+  $('histList').innerHTML=l.map(function(v){return visitHtml(v,'<button class="btn sm ghost" onclick="editVisit(\''+v.id+'\')">Edit</button><button class="btn sm red" onclick="deleteVisit(\''+v.id+'\')">Delete</button>')}).join('')||'<p class="muted">No records found.</p>';
+}
+['hType','hMember'].forEach(function(i){$(i).onchange=renderHistory});$('hSearch').oninput=renderHistory;
+
+/* ---------- reports ---------- */
+function runReport(monthLabel){
+  var f=$('rFrom').value,t=$('rTo').value,ty=$('rType').value,d=$('rDeacon').value,days=+$('rDays').value||60,rs=$('rReason').value,gr=$('rGroup').value;
+  var l=db.visits.filter(function(v){return (!f||v.date>=f)&&(!t||v.date<=t)&&(!ty||v.type===ty)&&(!d||v.deacon===d)&&(!rs||v.reason===rs)&&(!gr||inGroup(v.memberId,gr))})
+   .sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time)});
+  lastReport=l;
+  var byType={},byDeacon={},byMember={},byReason={};
+  TYPES.forEach(function(x){byType[x]=0});
+  l.forEach(function(v){byType[v.type]=(byType[v.type]||0)+1;var dk=v.deacon||'(not entered)';byDeacon[dk]=(byDeacon[dk]||0)+1;byMember[v.memberId]=(byMember[v.memberId]||0)+1;var rk=v.reason||'(not entered)';byReason[rk]=(byReason[rk]||0)+1});
+  var range=(f||t)?(f?fmtDate(f):'start')+' to '+(t?fmtDate(t):'today'):'All dates';
+  var h='<h2>'+(monthLabel?'Monthly Deacon Report, '+esc(monthLabel):'Visitation Report')+'</h2><div class="muted">Mt. Zion Baptist Church | '+esc(range)+(ty?' | '+esc(ty):'')+(d?' | '+esc(d):'')+' | Printed '+fmtDate(today())+'</div>';
+  h+='<div class="stats" style="margin-top:10px"><div class="stat"><b>'+l.length+'</b>Total contacts</div>';
+  TYPES.forEach(function(x){h+='<div class="stat"><b>'+byType[x]+'</b>'+PLURAL[x]+'</div>'});
+  h+='<div class="stat"><b>'+Object.keys(byMember).length+'</b>Members reached</div></div>';
+  h+='<h2>By deacon</h2><div class="scroll"><table><tr><th>Deacon</th><th>Contacts</th></tr>'+
+   Object.keys(byDeacon).sort().map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+byDeacon[k]+'</td></tr>'}).join('')+'</table></div>';
+  h+='<h2 style="margin-top:14px">By reason</h2><div class="scroll"><table><tr><th>Reason</th><th>Contacts</th></tr>'+
+   Object.keys(byReason).sort().map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+byReason[k]+'</td></tr>'}).join('')+'</table></div>';
+  h+='<h2 style="margin-top:14px">All contacts</h2><div class="scroll"><table><tr><th>Date</th><th>Time</th><th>Type</th><th>Reason</th><th>Member</th><th>Deacon</th><th>Location</th><th>Notes</th></tr>'+
+   l.map(function(v){return '<tr><td>'+fmtDate(v.date)+'</td><td>'+fmtTime(v.time)+'</td><td>'+esc(v.type)+'</td><td>'+esc(v.reason)+'</td><td>'+esc(memName(v.memberId))+'</td><td>'+esc(v.deacon)+'</td><td>'+esc(v.location)+'</td><td>'+esc(v.notes)+'</td></tr>'}).join('')+
+   (l.length?'':'<tr><td colspan="8" class="muted">No records in this range.</td></tr>')+'</table></div>';
+  var cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  var cs=cutoff.getFullYear()+'-'+String(cutoff.getMonth()+1).padStart(2,'0')+'-'+String(cutoff.getDate()).padStart(2,'0');
+  var miss=sortedMembers().filter(function(m){var lc=lastContact(m.id);return (!gr||(m.groups||[]).indexOf(gr)>-1)&&(!lc||lc.date<cs)});
+  h+='<h2 style="margin-top:14px">Not contacted in the last '+days+' days ('+miss.length+')</h2><div class="scroll"><table><tr><th>Name</th><th>Phone</th><th>Last contact</th></tr>'+
+   miss.map(function(m){var lc=lastContact(m.id);return '<tr><td>'+esc(m.name)+'</td><td>'+esc(m.phone)+'</td><td>'+(lc?esc(lc.type)+', '+fmtDate(lc.date):'None on record')+'</td></tr>'}).join('')+
+   (miss.length?'':'<tr><td colspan="3" class="muted">Everyone has been reached.</td></tr>')+'</table></div>';
+  if(monthLabel){
+    var pl=db.prayers.filter(function(p){return (p.status||'Active')!=='Answered'});
+    h+='<h2 style="margin-top:14px">Active prayer requests ('+pl.length+')</h2><div class="scroll"><table><tr><th>Member</th><th>Request</th><th>Since</th></tr>'+
+     pl.map(function(p){return '<tr><td>'+esc(memName(p.memberId))+'</td><td>'+esc(p.request)+'</td><td>'+fmtDate(p.added)+'</td></tr>'}).join('')+
+     (pl.length?'':'<tr><td colspan="3" class="muted">None.</td></tr>')+'</table></div>'+
+     '<p style="margin-top:30px">Submitted by: ______________________ &nbsp; Date: ____________</p>';
+  }
+  $('reportOut').innerHTML=h;
+}
+function csvCell(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'}
+function exportCSV(){
+  if(!lastReport.length){say('Nothing to download','Run a report that has records first.');return}
+  var rows=[['Date','Time','Type','Reason','Member','Deacon','Location','Notes','Follow up']];
+  lastReport.forEach(function(v){rows.push([v.date,v.time,v.type,v.reason,memName(v.memberId),v.deacon,v.location,v.notes,v.follow?(v.done?'Done':'Yes'):'No'])});
+  var csv=rows.map(function(r){return r.map(csvCell).join(',')}).join('\r\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='deacon-visits-'+today()+'.csv';a.click();
+}
+
+/* ---------- start ---------- */
+function inGroup(id,g){var m=db.members.find(function(x){return x.id===id});return !!m&&(m.groups||[]).indexOf(g)>-1}
+function fillExtra(){
+  function put(id,html){var c=$(id).value;$(id).innerHTML=html;if(c)$(id).value=c}
+  function opt(x){return '<option>'+esc(x)+'</option>'}
+  var g='<option value="">All groups</option>'+GROUPS.map(opt).join('');
+  put('mGroup',g);put('rGroup',g);
+  put('rReason','<option value="">All reasons</option>'+REASONS.map(opt).join(''));
+  put('vReason',REASONS.map(opt).join(''));
+}
+function monthlyReport(){
+  var m=$('rMonth').value;
+  if(!m){say('Month needed','Choose a month first.');return}
+  var p=m.split('-'),y=+p[0],mo=+p[1],last=new Date(y,mo,0).getDate();
+  $('rFrom').value=m+'-01';$('rTo').value=m+'-'+String(last).padStart(2,'0');
+  $('rType').value='';$('rDeacon').value='';$('rReason').value='';$('rGroup').value='';
+  runReport(new Date(y,mo-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'}));
+}
+
+/* ---------- prayer list ---------- */
+function renderPrayer(){
+  var s=$('pShow').value;
+  $('pPrintDate').textContent='Printed '+fmtDate(today());
+  var l=db.prayers.filter(function(p){return s==='All'||(p.status||'Active')===s}).sort(function(a,b){return (b.added||'').localeCompare(a.added||'')});
+  $('prayList').innerHTML=l.map(function(p){
+    return '<div class="item"><b>'+esc(memName(p.memberId))+'</b> <span class="muted">added '+fmtDate(p.added)+' | '+esc(p.status||'Active')+'</span><div>'+esc(p.request)+'</div>'+
+     '<div style="margin-top:6px"><button class="btn sm" onclick="togglePrayer(\''+p.id+'\')">'+((p.status||'Active')==='Answered'?'Reopen':'Mark answered')+'</button>'+
+     '<button class="btn sm ghost" onclick="openPrayerModal(\''+p.id+'\')">Edit</button>'+
+     '<button class="btn sm red" onclick="deletePrayer(\''+p.id+'\')">Remove</button></div></div>';
+  }).join('')||'<p class="muted">No requests to show.</p>';
+}
+$('pShow').onchange=renderPrayer;
+function togglePrayer(id){var p=db.prayers.find(function(x){return x.id===id});p.status=(p.status==='Answered')?'Active':'Answered';p.ts=Date.now();persist();renderPrayer()}
+function deletePrayer(id){ask('Remove request','Remove this prayer request?','Remove',function(){db.deleted.push(id);db.prayers=db.prayers.filter(function(p){return p.id!==id});persist();renderPrayer()})}
+function openPrayerModal(id){
+  if(!db.members.length){say('Add a name first','Add at least one member on the Members tab.');return}
+  var p=id?db.prayers.find(function(x){return x.id===id}):{memberId:'',request:'',status:'Active',added:today()};
+  var opts=sortedMembers().map(function(m){return '<option value="'+m.id+'"'+(m.id===p.memberId?' selected':'')+'>'+esc(m.name)+'</option>'}).join('');
+  modal(id?'Edit request':'Add prayer request',
+   '<label>Member</label><select id="pMem">'+opts+'</select><label>Prayer request</label><textarea id="pReq">'+esc(p.request)+'</textarea>'+
+   '<label>Status</label><select id="pStat"><option'+((p.status||'Active')==='Active'?' selected':'')+'>Active</option><option'+(p.status==='Answered'?' selected':'')+'>Answered</option></select>',
+   [{text:'Cancel',cls:'ghost'},{text:'Save',fn:function(){
+     var r=$('pReq').value.trim();
+     if(!r){$('pReq').style.borderColor='#b3261e';return false}
+     if(id){p.memberId=$('pMem').value;p.request=r;p.status=$('pStat').value;p.ts=Date.now()}
+     else db.prayers.push({id:uid(),memberId:$('pMem').value,request:r,status:$('pStat').value,added:today(),ts:Date.now()});
+     persist();renderPrayer();
+   }}]);
+}
+
+/* ---------- import names from CSV ---------- */
+function parseCSV(t){
+  var rows=[],r=[],c='',q=false;
+  for(var i=0;i<t.length;i++){
+    var ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){c+='"';i++}else q=false}else c+=ch}
+    else if(ch==='"')q=true;
+    else if(ch===','){r.push(c);c=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(c);c='';rows.push(r);r=[]}
+    else c+=ch;
+  }
+  if(c!==''||r.length){r.push(c);rows.push(r)}
+  return rows.filter(function(x){return x.some(function(y){return y.trim()})});
+}
+$('importFile').addEventListener('change',function(e){
+  var f=e.target.files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var rows=parseCSV(String(rd.result).replace(/^﻿/,''));
+    if(!rows.length){say('Empty file','No rows were found in that file.');return}
+    var head=rows[0].map(function(x){return x.trim().toLowerCase()});
+    function col(names){for(var i=0;i<head.length;i++)if(names.indexOf(head[i])>-1)return i;return -1}
+    var iN=col(['name','full name']),iF=col(['first name','first']),iL=col(['last name','last']);
+    var has=iN>-1||iF>-1||iL>-1;
+    var iP=col(['phone','phone number']),iM=col(['mobile phone','mobile','cell']),iA=col(['address','address 1']),iA2=col(['address 2']),iC=col(['city']),iSt=col(['state']),iZ=col(['zip','zip code']),iDis=col(['disabled']),iNo=col(['notes','note']),iG=col(['groups','group']);
+    function g(r,i){return i>-1?(r[i]||'').trim():''}
+    function addr(r){var line=[g(r,iA),g(r,iA2),g(r,iC)].filter(Boolean).join(', ');var sz=(g(r,iSt)+' '+g(r,iZ)).trim();return [line,sz].filter(Boolean).join(', ')}
+    var data=has?rows.slice(1):rows;
+    if(!has){iN=0;iP=1;iA=2;iNo=3}
+    var added=0,skipped=0,off=0;
+    data.forEach(function(r){
+      var ln=g(r,iL),fn=g(r,iF);
+      if(iDis>-1&&g(r,iDis).toLowerCase()==='yes'){off++;return}
+      if(iN<0&&iL>-1&&!ln)return;
+      var n=iN>-1?g(r,iN):(ln&&fn?ln+', '+fn:(ln||fn));
+      if(!n)return;
+      if(db.members.some(function(m){return m.name.toLowerCase()===n.toLowerCase()})){skipped++;return}
+      var gs=[];
+      if(iG>-1)(r[iG]||'').split(/[;|]/).forEach(function(x){x=x.trim().toLowerCase();var g=GROUPS.filter(function(y){return y.toLowerCase()===x})[0];if(g)gs.push(g)});
+      db.members.push({id:uid(),name:n,phone:g(r,iP)||g(r,iM),address:addr(r),notes:iNo>-1?(r[iNo]||'').trim():'',groups:gs,ts:Date.now()});
+      added++;
+    });
+    persist();renderAll();
+    say('Import finished',added+' names added. '+skipped+' were already on the list and skipped.'+(off?' '+off+' marked disabled were left out.':''));
+  };
+  rd.readAsText(f);e.target.value='';
+});
+
+function renderAll(){fillSelects();fillExtra();renderFollow();renderHistory();renderMembers();renderPrayer()}
+loadLocal();
+$('sKey').value=cfg.key||'';$('sBin').value=cfg.bin||'';
+var d0=new Date();d0.setDate(1);
+$('rFrom').value=d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0')+'-01';$('rTo').value=today();
+renderAll();resetVisitForm();
+$('rMonth').value=today().slice(0,7);
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&cloudReady())pullCloud(false)});
+if(cloudReady())pullCloud(false);
+</script>
+</body>
+</html>
