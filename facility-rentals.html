@@ -1,0 +1,898 @@
+<!--
+CHANGELOG (newest first)
+v1.3.3 - A booking whose event was deleted directly in Google Calendar now disappears from the app (hidden for everyone, removed from saved data when an editor has the app open). Calendar re-checked every 2 minutes.
+v1.3.2 - Family Life Center tile on the Space Board now shows only whole-building bookings, not single room bookings.
+v1.3.1 - Save button locks while saving, so a double tap no longer creates two bookings.
+v1.3.0 - Email alerts: editors can set the alert email list in Settings; the calendar bridge (v1.1.0) emails when rooms are added, changed or deleted, and the app tells it who entered each booking.
+v1.2.2 - Added Main Building Classroom and Main Building Nursery as separate spaces (not part of the Family Life Center); saved data is updated automatically.
+v1.2.1 - Classrooms named (A Clothing Room, B Sunday School Room, C Teen Room, D Classroom), FLC conference room removed, plain conference room now means the main building conference room.
+v1.2.0 - FLC events now need rooms named in parentheses (Classroom A to D, Gym, Kitchen, Conference Room), bare FLC goes to Needs Attention, all day and exact hours shown everywhere, series option for repeating events, All day checkbox for entered bookings.
+v1.1.0 - Adds FLC and room words for matching, hides calendar events with no room word, and can add, change or remove bookings on the church Google Calendar through an Apps Script link.
+v1.0.0 - First build: space board, week grid, list, attention tab, Google Calendar read, double booking warnings, check offs, four editors, JSONBin saving.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facility Rentals</title>
+<style>
+:root{--blue:#0086FF;--purple:#410942;--copper:#A95D4D;--lav:#E9BFF5;--navy:#10152B;--gray:#3F3F3F;--bg:#F7F4F9;--line:#DDD3E2;--red:#B3261E;--green:#1B7F3B;--amber:#9A6200}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--navy);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+header.top{background:var(--purple);color:#fff;padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+header.top h1{font-size:1.25rem;margin:0}
+header.top .sub{font-size:.8rem;color:var(--lav)}
+.hbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+nav.tabs{background:#fff;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;padding:0 8px}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:12px 14px;cursor:pointer;color:var(--gray);white-space:nowrap;font-weight:600}
+nav.tabs button.on{color:var(--blue);border-bottom-color:var(--blue)}
+.badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:var(--red);color:#fff;font-size:.75rem;text-align:center;margin-left:6px}
+main{max-width:1250px;margin:0 auto;padding:16px}
+.btn{border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600}
+.btn.primary{background:var(--blue);color:#fff}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.dangerfill{background:var(--red);border-color:var(--red);color:#fff}
+.btn.light{border-color:var(--lav);color:#fff;background:transparent}
+.btn.small{padding:4px 10px;font-size:.85rem}
+.btn:disabled{opacity:.5;cursor:default}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.banner{padding:10px 16px;font-size:.92rem}
+.banner.warn{background:#FFF3D6;color:#6b4500}
+.banner.err{background:#FBE3E1;color:var(--red)}
+.banner.info{background:var(--lav);color:var(--purple)}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:14px}
+.controls label{display:flex;flex-direction:column;font-size:.82rem;color:var(--gray);gap:3px}
+input,select,textarea{border:1px solid #bfb3c6;border-radius:8px;padding:8px;background:#fff;width:100%}
+.controls input,.controls select{width:auto}
+textarea{min-height:70px;resize:vertical}
+h2.sec{font-size:1.05rem;color:var(--purple);margin:18px 0 8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.tile{background:#fff;border:1px solid var(--line);border-left:6px solid var(--green);border-radius:10px;padding:12px}
+.tile.busy{border-left-color:var(--red)}
+.tile.part{border-left-color:#E0A100}
+.tile h3{margin:0 0 4px;font-size:1rem;color:var(--purple)}
+.tile.child{margin-left:0}
+.st{display:inline-block;font-size:.75rem;font-weight:700;border-radius:10px;padding:2px 9px}
+.st.free{background:#DDF3E4;color:var(--green)}
+.st.busy{background:#FBE3E1;color:var(--red)}
+.st.part{background:#FFF0C2;color:var(--amber)}
+.when{font-weight:700;margin:8px 0 2px}
+.when.sub{font-weight:400;font-size:.92rem;color:var(--gray)}
+.use{border-top:1px dashed var(--line);margin-top:8px;padding-top:6px;font-size:.88rem;cursor:pointer}
+.use small{color:var(--gray)}
+.pill{display:inline-block;font-size:.72rem;font-weight:700;border-radius:10px;padding:1px 8px;border:1px solid}
+.pill.Requested{color:var(--copper);border-color:var(--copper);background:#FBF0EE}
+.pill.Approved{color:var(--blue);border-color:var(--blue);background:#E8F3FF}
+.pill.Confirmed{color:#fff;border-color:var(--blue);background:var(--blue)}
+.pill.Cancelled{color:var(--gray);border-color:#999;background:#eee}
+.pill.clash{color:#fff;background:var(--red);border-color:var(--red)}
+.wkwrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:10px}
+table.wk{border-collapse:separate;border-spacing:0;width:100%;min-width:980px;table-layout:fixed}
+table.wk th,table.wk td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;padding:4px}
+table.wk th{background:var(--lav);color:var(--purple);font-size:.85rem;padding:8px 4px;position:sticky;top:0}
+table.wk th.today{background:var(--blue);color:#fff}
+table.wk td.sp,table.wk th.sp{position:sticky;left:0;width:150px;background:#fff;z-index:2;font-weight:700;font-size:.85rem;color:var(--purple)}
+table.wk th.sp{background:var(--lav)}
+table.wk td.day.ed{cursor:cell}
+.chip{display:block;border-left:4px solid var(--blue);background:#E8F3FF;border-radius:4px;padding:3px 5px;margin:2px 0;font-size:.76rem;cursor:pointer;overflow:hidden}
+.chip.Requested{border-left-color:var(--copper);background:#FBF0EE}
+.chip.Approved{border-left-color:var(--blue);background:#F1F8FF}
+.chip.inh{opacity:.55;border-left-style:dotted}
+.chip.clash{outline:2px solid var(--red)}
+.chip b{display:block}
+.row{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.row:last-child{border-bottom:0}
+.row .t{min-width:96px;font-weight:700;color:var(--purple);font-size:.9rem}
+.row .m{flex:1}
+.row .m small{color:var(--gray);display:block}
+.dayh{background:var(--lav);color:var(--purple);font-weight:700;padding:6px 12px;border-radius:8px;margin:14px 0 4px}
+.empty{color:var(--gray);padding:18px;text-align:center}
+.legend{font-size:.8rem;color:var(--gray);margin:6px 0}
+#modalRoot .ov{position:fixed;inset:0;background:rgba(16,21,43,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;z-index:50}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:680px;margin:auto}
+.mh{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--lav);border-radius:12px 12px 0 0}
+.mh h2{margin:0;font-size:1.1rem;color:var(--purple)}
+.mb{padding:14px 16px}
+.mb label{display:block;font-size:.85rem;color:var(--gray);margin-bottom:10px}
+.mb label>input,.mb label>select,.mb label>textarea{margin-top:3px;color:var(--navy)}
+.mf{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--line)}
+.r3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:0 0 12px;padding:8px 12px}
+legend{color:var(--purple);font-weight:700;font-size:.85rem;padding:0 6px}
+label.chk{display:flex;gap:8px;align-items:center;font-size:.95rem;color:var(--navy);margin:5px 0}
+label.chk input{width:auto;margin:0;transform:scale(1.2)}
+.confbox{background:#FBE3E1;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px;margin-bottom:12px;font-size:.92rem}
+.confbox ul{margin:6px 0 0 18px;padding:0}
+.okbox{background:#DDF3E4;border:1px solid var(--green);color:var(--green);border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:.9rem}
+.note{font-size:.88rem;color:var(--gray)}
+.edrow{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:8px}
+.sprow{display:grid;grid-template-columns:1.3fr 1fr 1.4fr auto;gap:8px;margin-bottom:8px}
+#toastRoot{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:90%}
+.toast{background:var(--navy);color:#fff;padding:10px 18px;border-radius:20px;font-size:.92rem}
+@media(max-width:640px){
+ main{padding:10px}
+ .r3{grid-template-columns:1fr 1fr}
+ .sprow{grid-template-columns:1fr 1fr}
+ .edrow{grid-template-columns:1fr 1fr}
+ .row{flex-direction:column;gap:2px}
+ table.wk td.sp,table.wk th.sp{width:110px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div><h1>Facility Rentals and Room Use</h1><div class="sub">Mt. Zion Baptist Church</div></div>
+  <div class="hbtns" id="hbtns"></div>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<div id="banners"></div>
+<main id="main"><div class="empty">Loading...</div></main>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ---------- Optional shared settings ----------
+   Fill these in once so every person who opens the page gets the same connection.
+   Anything saved in Settings on a device overrides these. */
+const CONFIG = { binId: '', masterKey: '', calendarId: '8dpt1qpd7f3dv44mohfi88j7c8@group.calendar.google.com', calApiKey: '', writeUrl: '', writeSecret: '' };
+
+const STATUSES = ['Requested', 'Approved', 'Confirmed', 'Cancelled'];
+const CHECKS = [
+  { k: 'deposit', l: 'Deposit paid' },
+  { k: 'fee', l: 'Rental fee paid' },
+  { k: 'setup', l: 'Setup done' },
+  { k: 'cleanup', l: 'Cleanup done and room checked' },
+  { k: 'keysOut', l: 'Keys issued' },
+  { k: 'keysIn', l: 'Keys returned' },
+  { k: 'equip', l: 'Equipment ready (tables, chairs, sound, projector)' },
+  { k: 'kitchen', l: 'Kitchen cleaned', only: 'kitchen' }
+];
+const DEFAULT_SPACES = [
+  { id: 'flc', name: 'Family Life Center (whole building)', parent: '', keywords: '' },
+  { id: 'gym', name: 'Gym', parent: 'flc', keywords: 'gym, gymnasium' },
+  { id: 'classA', name: 'Classroom A (Clothing Room)', parent: 'flc', keywords: 'clothing room' },
+  { id: 'classB', name: 'Classroom B (Sunday School Room)', parent: 'flc', keywords: 'sunday school room' },
+  { id: 'classC', name: 'Classroom C (Teen Room)', parent: 'flc', keywords: 'teen room' },
+  { id: 'classD', name: 'Classroom D (Classroom)', parent: 'flc', keywords: '' },
+  { id: 'kitchen', name: 'Kitchen (Family Life Center)', parent: 'flc', keywords: 'kitchen' },
+  { id: 'sanctuary', name: 'Sanctuary', parent: '', keywords: 'sanctuary' },
+  { id: 'mainconf', name: 'Conference Room (Main Building)', parent: '', keywords: 'main conference, main building conference' },
+  { id: 'mainclass', name: 'Main Building Classroom', parent: '', keywords: 'main building classroom, main classroom' },
+  { id: 'nursery', name: 'Main Building Nursery', parent: '', keywords: 'nursery' }
+];
+
+/* ---------- Helpers ---------- */
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const hhmm = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const sod = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const combine = (ds, ts) => { const [h, m] = ts.split(':').map(Number); const d = parseYmd(ds); d.setHours(h, m, 0, 0); return d; };
+const fmtTime = d => { let h = d.getHours(), m = d.getMinutes(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + (m ? ':' + pad(m) : '') + ' ' + ap; };
+const fmtDate = d => d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const fmtLong = d => d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+const clone = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function isAllDay(i) { return i.allDay || (hhmm(i.start) === '00:00' && (hhmm(i.end) === '23:59' || hhmm(i.end) === '00:00')); }
+function timeRange(i) { return isAllDay(i) ? 'All day' : fmtTime(i.start) + ' to ' + fmtTime(i.end); }
+
+/* ---------- State ---------- */
+const S = {
+  data: null, cal: [], calRange: null, calErr: '', calOn: false, loadErr: '',
+  editor: null, view: 'board', date: sod(new Date()),
+  bStart: '00:00', bEnd: '23:59',
+  fSpace: '', fStatus: '', fRange: '30',
+  items: [], conf: [], cmap: {}, local: false, busy: false
+};
+try { S.editor = sessionStorage.getItem('fr_editor') || null; } catch (e) {}
+
+function cfg() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem('fr_cfg') || '{}'); } catch (e) {}
+  return {
+    binId: o.binId || CONFIG.binId, masterKey: o.masterKey || CONFIG.masterKey,
+    calendarId: o.calendarId || CONFIG.calendarId, calApiKey: o.calApiKey || CONFIG.calApiKey,
+    writeUrl: o.writeUrl || CONFIG.writeUrl, writeSecret: o.writeSecret || CONFIG.writeSecret
+  };
+}
+
+/* ---------- Saved data (JSONBin v3, or this device only in practice mode) ---------- */
+function normalize(d) {
+  d = d && typeof d === 'object' ? d : {};
+  if (!Array.isArray(d.spaces) || !d.spaces.length) d.spaces = clone(DEFAULT_SPACES);
+  if (!Array.isArray(d.bookings)) d.bookings = [];
+  if (!d.calMeta || typeof d.calMeta !== 'object') d.calMeta = {};
+  if (!Array.isArray(d.editors)) d.editors = [];
+  if (!d.calSeries || typeof d.calSeries !== 'object') d.calSeries = {};
+  /* upgrade older saved data: one Classrooms space becomes Classroom A to D */
+  if (d.spaces.some(s => s.id === 'classrooms') && !d.spaces.some(s => s.id === 'classA')) {
+    const all = ['classA', 'classB', 'classC', 'classD'];
+    const i = d.spaces.findIndex(s => s.id === 'classrooms'), par = d.spaces[i].parent;
+    d.spaces.splice(i, 1, ...['A', 'B', 'C', 'D'].map(L => ({ id: 'class' + L, name: 'Classroom ' + L, parent: par, keywords: '' })));
+    const fix = a => [].concat(...a.map(x => x === 'classrooms' ? all : [x]));
+    d.bookings.forEach(b => { if (Array.isArray(b.spaces)) b.spaces = fix(b.spaces); });
+    Object.values(d.calMeta).forEach(m => { if (m && Array.isArray(m.spaces)) m.spaces = fix(m.spaces); });
+  }
+  const nm = { classA: ['Classroom A (Clothing Room)', 'clothing room'], classB: ['Classroom B (Sunday School Room)', 'sunday school room'], classC: ['Classroom C (Teen Room)', 'teen room'], classD: ['Classroom D (Classroom)', ''] };
+  d.spaces.forEach(s => { const n = nm[s.id]; if (n && /^Classroom [A-D]$/.test(s.name)) { s.name = n[0]; s.keywords = n[1]; } });
+  if (d.spaces.some(s => s.id === 'flcconf')) {
+    d.spaces = d.spaces.filter(s => s.id !== 'flcconf');
+    const drop = a => a.filter(x => x !== 'flcconf');
+    d.bookings.forEach(b => { if (Array.isArray(b.spaces)) b.spaces = drop(b.spaces); });
+    Object.values(d.calMeta).forEach(m => { if (m && Array.isArray(m.spaces)) m.spaces = drop(m.spaces); });
+    Object.values(d.calSeries).forEach(m => { if (m && Array.isArray(m.spaces)) m.spaces = drop(m.spaces); });
+  }
+  DEFAULT_SPACES.filter(x => x.id === 'mainclass' || x.id === 'nursery').forEach(x => { if (!d.spaces.some(s => s.id === x.id)) d.spaces.push(clone(x)); });
+  const flc = d.spaces.find(s => s.id === 'flc');
+  if (flc && /^(flc, family life center|whole family life center, entire family life center, entire flc)$/i.test((flc.keywords || '').trim())) flc.keywords = '';
+  return d;
+}
+async function loadData() {
+  const c = cfg();
+  if (!c.binId || !c.masterKey) {
+    S.local = true;
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem('fr_local') || 'null'); } catch (e) {}
+    return normalize(d);
+  }
+  S.local = false;
+  const r = await fetch('https://api.jsonbin.io/v3/b/' + c.binId + '/latest', { headers: { 'X-Master-Key': c.masterKey, 'X-Bin-Meta': 'false' } });
+  if (!r.ok) throw new Error('Could not load saved data (error ' + r.status + ')');
+  return normalize(await r.json());
+}
+async function putData(d) {
+  const c = cfg();
+  if (!c.binId || !c.masterKey) { localStorage.setItem('fr_local', JSON.stringify(d)); return; }
+  const r = await fetch('https://api.jsonbin.io/v3/b/' + c.binId, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': c.masterKey }, body: JSON.stringify(d)
+  });
+  if (!r.ok) throw new Error('Could not save (error ' + r.status + ')');
+}
+/* Read the newest copy, apply one change, save. This keeps four editors from overwriting each other. */
+async function mutate(fn) {
+  S.busy = true; renderChrome();
+  try {
+    const fresh = await loadData();
+    fn(fresh);
+    fresh.updatedAt = Date.now();
+    await putData(fresh);
+    S.data = fresh; S.loadErr = '';
+  } catch (e) {
+    S.busy = false; toast(e.message || 'Save failed'); renderChrome(); throw e;
+  }
+  S.busy = false; render();
+}
+
+/* ---------- Google Calendar (read only) ---------- */
+function mapEvent(e) {
+  const allDay = !!(e.start && e.start.date && !e.start.dateTime);
+  const start = allDay ? parseYmd(e.start.date) : new Date(e.start.dateTime);
+  const end = allDay ? parseYmd(e.end.date) : new Date(e.end.dateTime);
+  return { id: e.id, rid: e.recurringEventId || '', title: e.summary || '(No title)', location: e.location || '', desc: e.description || '', start, end, allDay, link: e.htmlLink || '' };
+}
+async function loadCal(from, to) {
+  const c = cfg();
+  if (!c.calendarId || !c.calApiKey) { S.calOn = false; S.cal = []; return; }
+  S.calOn = true; S.calErr = '';
+  const ids = c.calendarId.split(',').map(s => s.trim()).filter(Boolean);
+  const all = [];
+  for (const id of ids) {
+    try {
+      let tok = '';
+      do {
+        const url = 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(id) + '/events?key=' + encodeURIComponent(c.calApiKey) +
+          '&singleEvents=true&orderBy=startTime&maxResults=2500&timeMin=' + encodeURIComponent(from.toISOString()) + '&timeMax=' + encodeURIComponent(to.toISOString()) + (tok ? '&pageToken=' + encodeURIComponent(tok) : '');
+        const r = await fetch(url);
+        if (!r.ok) { let m = 'error ' + r.status; try { const j = await r.json(); if (j.error && j.error.message) m = j.error.message; } catch (e) {} throw new Error(m); }
+        const j = await r.json();
+        (j.items || []).forEach(e => { if (e.status !== 'cancelled' && e.start && e.end) all.push(mapEvent(e)); });
+        tok = j.nextPageToken || '';
+      } while (tok);
+    } catch (err) { S.calErr = 'Calendar problem: ' + err.message; }
+  }
+  S.cal = all; S.calRange = { from, to };
+}
+async function ensureCal(force) {
+  const today = sod(new Date());
+  const need = S.date;
+  const from = addDays(need < today ? need : today, -35), to = addDays(need > today ? need : today, 180);
+  const r = S.calRange;
+  if (!force && r && need >= addDays(r.from, 7) && addDays(need, 7) <= r.to) return;
+  await loadCal(r && !force ? (from < r.from ? from : r.from) : from, r && !force ? (to > r.to ? to : r.to) : to);
+}
+
+/* ---------- Spaces ---------- */
+const spaceById = id => S.data.spaces.find(s => s.id === id);
+function ancestors(id) {
+  const out = []; let cur = spaceById(id), g = 0;
+  while (cur && cur.parent && g++ < 10) { out.push(cur.parent); cur = spaceById(cur.parent); }
+  return out;
+}
+const related = (a, b) => a === b || ancestors(a).includes(b) || ancestors(b).includes(a);
+function spaceList() {
+  const sp = S.data.spaces, out = [], seen = new Set();
+  const add = (s, depth) => { if (seen.has(s.id)) return; seen.add(s.id); out.push({ ...s, depth }); sp.filter(c => c.parent === s.id).forEach(c => add(c, depth + 1)); };
+  sp.filter(s => !s.parent || !spaceById(s.parent)).forEach(s => add(s, 0));
+  sp.forEach(s => add(s, 0));
+  return out;
+}
+const kw = s => (s.keywords || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+function parseLetters(str) {
+  str = str.replace(/^[\s:]*/, '');
+  let m = str.match(/^([a-d])\s*(?:-|to|through|thru)\s*([a-d])\b/);
+  if (m) { const a = m[1].charCodeAt(0), b = m[2].charCodeAt(0), out = []; for (let c = Math.min(a, b); c <= Math.max(a, b); c++) out.push(String.fromCharCode(c).toUpperCase()); return out; }
+  m = str.match(/^([a-d](?![a-z])(?:\s*(?:,|&|\+|\/|and)?\s*[a-d](?![a-z]))*)/);
+  if (!m) return [];
+  return [...new Set(m[1].replace(/and/g, ' ').toUpperCase().match(/[A-D]/g))];
+}
+/* Reads room names out of a calendar event. Returns the rooms found, and amb = true when the event
+   names the FLC, classrooms or a conference room without saying which rooms. */
+function autoMatch(e) {
+  const t = (e.title + ' ' + e.location + ' ' + e.desc).toLowerCase();
+  const special = new Set(['flc']);
+  const ids = new Set(S.data.spaces.filter(s => !special.has(s.id) && kw(s).some(k => t.includes(k))).map(s => s.id));
+  let amb = false;
+  const flc = /\bflc\b|family life/.test(t);
+  const whole = /(flc|family life center)\s*\(?\s*(whole|entire|all rooms|all areas|everything)/.test(t) || /\b(whole|entire)\s+(flc|family life|building)/.test(t);
+  for (const cm of t.matchAll(/class\s?rooms?\b/g)) {
+    if (/\bmain(\s+building)?\s*$/.test(t.slice(0, cm.index))) continue;
+    const letters = parseLetters(t.slice(cm.index + cm[0].length));
+    if (letters.length) letters.forEach(L => ids.add('class' + L)); else amb = true;
+  }
+  if (/conference/.test(t) && !ids.has('mainconf')) {
+    if (spaceById('mainconf')) ids.add('mainconf'); else amb = true;
+  }
+  if (flc && whole) { [...ids].forEach(i => { if (ancestors(i).includes('flc')) ids.delete(i); }); ids.add('flc'); }
+  else if (flc && ids.size === 0) amb = true;
+  return { ids: [...ids], amb };
+}
+const writeOn = () => { const c = cfg(); return !!(c.writeUrl && c.writeSecret); };
+async function calWrite(payload) {
+  const c = cfg();
+  const r = await fetch(c.writeUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, by: S.editor || '', secret: c.writeSecret }) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'Calendar update failed');
+  return j;
+}
+const spaceNames = ids => ids.map(i => spaceById(i)).filter(Boolean).map(s => s.name).join(', ');
+
+/* ---------- Items and conflicts ---------- */
+/* An app booking that has a church calendar event, but whose event is no longer on the calendar, was deleted from Google Calendar. */
+function goneFromCal(b) {
+  if (!b.calEventId || !S.calOn || S.calErr || !S.calRange) return false;
+  if (Date.now() - (b.updated || b.created || 0) < 180000) return false;
+  const st = combine(b.date, b.start);
+  if (isNaN(st) || st < S.calRange.from || st >= S.calRange.to) return false;
+  const cid = String(b.calEventId).split('@')[0];
+  return !S.cal.some(e => String(e.id).split('@')[0] === cid);
+}
+let PURGING = false;
+async function purgeGone() {
+  if (PURGING || S.busy || !S.editor || S.loadErr) return;
+  const ids = S.data.bookings.filter(goneFromCal).map(b => b.id);
+  if (!ids.length) return;
+  PURGING = true;
+  try { await mutate(d => { d.bookings = d.bookings.filter(b => !ids.includes(b.id)); }); toast(ids.length + ' booking' + (ids.length > 1 ? 's were' : ' was') + ' removed because the event was deleted from the church calendar.'); } catch (e) {}
+  PURGING = false;
+}
+function buildItems() {
+  const items = [];
+  for (const b of S.data.bookings) {
+    if (goneFromCal(b)) continue;
+    const start = combine(b.date, b.start), end = combine(b.date, b.end);
+    items.push({ key: 'a:' + b.id, source: 'app', id: b.id, title: b.title, contact: b.contact || '', start, end, allDay: false,
+      spaces: (b.spaces || []).filter(spaceById), calId: b.calEventId || '', status: b.status || 'Requested', checks: b.checks || {}, notes: b.notes || '', needsSpace: false });
+  }
+  const linked = new Set(S.data.bookings.filter(b => b.calEventId).map(b => String(b.calEventId).split('@')[0]));
+  for (const e of S.cal) {
+    if (linked.has(e.id.split('@')[0])) continue;
+    const m = S.data.calMeta[e.id] || {};
+    const ser = e.rid ? (S.data.calSeries || {})[e.rid] : null;
+    const own = Array.isArray(m.spaces);
+    const given = own ? m.spaces : (ser && Array.isArray(ser.spaces) ? ser.spaces : null);
+    let spaces, auto = false, amb = false;
+    if (given) spaces = given.filter(spaceById);
+    else { const r = autoMatch(e); spaces = r.ids.filter(spaceById); amb = r.amb; auto = spaces.length > 0 && !amb; }
+    if (!given && !spaces.length && !amb) continue; /* no room words: not a space booking, so not shown */
+    items.push({ key: 'c:' + e.id, source: 'cal', id: e.id, rid: e.rid, ownSpaces: own, title: e.title, start: e.start, end: e.end, allDay: e.allDay, link: e.link,
+      location: e.location, spaces, auto, status: m.status || 'Confirmed', checks: m.checks || {}, notes: m.notes || '', needsSpace: amb });
+  }
+  return items.filter(i => !isNaN(i.start) && !isNaN(i.end));
+}
+function clashPairs(A, B) {
+  const out = [];
+  for (const a of A) for (const b of B) if (related(a, b)) out.push([a, b]);
+  return out;
+}
+function clashText(pairs) {
+  const seen = new Set();
+  return pairs.map(([a, b]) => {
+    const na = spaceById(a).name, nb = spaceById(b).name;
+    return a === b ? na : na + ' and ' + nb;
+  }).filter(t => !seen.has(t) && seen.add(t)).join('; ');
+}
+function sameEvent(a, b) {
+  if (a.source === b.source) return false;
+  if (a.start.getTime() !== b.start.getTime() || a.end.getTime() !== b.end.getTime()) return false;
+  const x = a.title.toLowerCase().trim(), y = b.title.toLowerCase().trim();
+  return x.includes(y) || y.includes(x);
+}
+function conflictsFor(it, items) {
+  const out = [];
+  if (it.status === 'Cancelled' || !it.spaces.length) return out;
+  for (const o of items) {
+    if (o.key === it.key || o.status === 'Cancelled' || !o.spaces.length) continue;
+    if (!(it.start < o.end && o.start < it.end)) continue;
+    if (sameEvent(it, o)) continue;
+    const p = clashPairs(it.spaces, o.spaces);
+    if (p.length) out.push({ other: o, text: clashText(p) });
+  }
+  return out;
+}
+function findConflicts(items) {
+  const act = items.filter(i => i.status !== 'Cancelled' && i.spaces.length).sort((a, b) => a.start - b.start);
+  const out = [], map = {};
+  for (let i = 0; i < act.length; i++) {
+    for (let j = i + 1; j < act.length; j++) {
+      const a = act[i], b = act[j];
+      if (b.start >= a.end && b.start - a.start > 864e5 * 3) break;
+      if (!(a.start < b.end && b.start < a.end) || sameEvent(a, b)) continue;
+      const p = clashPairs(a.spaces, b.spaces);
+      if (!p.length) continue;
+      const text = clashText(p);
+      out.push({ a, b, text });
+      (map[a.key] = map[a.key] || []).push({ other: b, text });
+      (map[b.key] = map[b.key] || []).push({ other: a, text });
+    }
+  }
+  return { list: out, map };
+}
+function applicableChecks(it) { return CHECKS.filter(c => !c.only || it.spaces.includes(c.only)); }
+function progress(it) {
+  const ch = applicableChecks(it);
+  return ch.filter(c => it.checks[c.k]).length + ' of ' + ch.length + ' checked';
+}
+
+/* ---------- Rendering ---------- */
+const TABS = [['board', 'Space Board'], ['week', 'Week'], ['list', 'List'], ['attn', 'Needs Attention']];
+function render() {
+  if (!S.data) return;
+  S.items = buildItems();
+  const c = findConflicts(S.items); S.conf = c.list; S.cmap = c.map;
+  renderChrome();
+  const v = { board: renderBoard, week: renderWeek, list: renderList, attn: renderAttn }[S.view];
+  $('main').innerHTML = v();
+}
+function attnCount() {
+  const today = sod(new Date());
+  return S.conf.filter(c => c.a.end > today).length + S.items.filter(i => i.needsSpace && i.end > today).length;
+}
+function renderChrome() {
+  const ed = S.editor;
+  $('hbtns').innerHTML =
+    (ed ? '<button class="btn primary" data-act="new">Add booking</button>' : '') +
+    '<button class="btn light small" data-act="refresh">Refresh</button>' +
+    (ed ? '<button class="btn light small" data-act="signout">Signed in: ' + esc(ed) + ' (sign out)</button>'
+        : '<button class="btn light small" data-act="signin">' + (S.data && !S.data.editors.length ? 'Set up editors' : 'Sign in to edit') + '</button>') +
+    '<button class="btn light small" data-act="settings">Settings</button>' +
+    '<span class="sub">' + (S.busy ? 'Saving...' : '') + '</span>';
+  const n = S.data ? attnCount() : 0;
+  $('tabs').innerHTML = TABS.map(([k, l]) => '<button data-act="tab" data-v="' + k + '" class="' + (S.view === k ? 'on' : '') + '">' + l + (k === 'attn' && n ? '<span class="badge">' + n + '</span>' : '') + '</button>').join('');
+  let b = '';
+  if (S.loadErr) b += '<div class="banner err">' + esc(S.loadErr) + '</div>';
+  if (S.local) b += '<div class="banner warn">Practice mode: bookings are saved on this device only. Open Settings and add your JSONBin Bin ID and key to share them with your team.</div>';
+  if (S.data && !S.calOn) b += '<div class="banner info">Church calendar not connected yet. Open Settings to add your Google Calendar ID and API key.</div>';
+  if (S.calErr) b += '<div class="banner err">' + esc(S.calErr) + '</div>';
+  $('banners').innerHTML = b;
+}
+
+function dateNav(extra) {
+  return '<div class="controls">' +
+    '<button class="btn" data-act="shift" data-n="-' + (S.view === 'week' ? 7 : 1) + '">Previous</button>' +
+    '<button class="btn" data-act="today">Today</button>' +
+    '<button class="btn" data-act="shift" data-n="' + (S.view === 'week' ? 7 : 1) + '">Next</button>' +
+    '<label>Date<input type="date" data-bind="date" value="' + ymd(S.date) + '"></label>' + (extra || '') + '</div>';
+}
+
+/* Space Board */
+function renderBoard() {
+  const win = [combine(ymd(S.date), S.bStart), combine(ymd(S.date), S.bEnd)];
+  const inWin = S.items.filter(i => i.status !== 'Cancelled' && i.spaces.length && i.start < win[1] && i.end > win[0]);
+  const tiles = spaceList().map(s => {
+    const anc = ancestors(s.id);
+    const direct = inWin.filter(i => i.spaces.some(x => x === s.id || anc.includes(x)));
+    const part = []; /* the whole-building tile only reports whole-building bookings, not single rooms */
+    const cls = direct.length ? 'busy' : part.length ? 'part' : '';
+    const lab = direct.length ? 'Booked' : part.length ? 'Partly in use' : 'Free';
+    const lst = i => '<div class="use" data-act="open" data-key="' + esc(i.key) + '"><b>' + timeRange(i) + '</b> ' + esc(i.title) +
+      ' <span class="pill ' + i.status + '">' + i.status + '</span><br><small>' +
+      (i.spaces.includes(s.id) ? '' : (anc.some(a => i.spaces.includes(a)) ? 'Whole building booked. ' : 'Using: ' + esc(spaceNames(i.spaces)) + '. ')) + progress(i) + '</small></div>';
+    return '<div class="tile ' + cls + '"><h3>' + esc(s.name) + '</h3><span class="st ' + (cls || 'free') + '">' + lab + '</span>' +
+      (direct.length ? '<div class="when">Booked: ' + direct.slice().sort((x, y) => x.start - y.start).map(timeRange).join('; ') + '</div>' : '') +
+      (part.length ? '<div class="when sub">Rooms in use: ' + part.slice().sort((x, y) => x.start - y.start).map(i => timeRange(i) + ' (' + esc(spaceNames(i.spaces.filter(x => ancestors(x).includes(s.id)))) + ')').join('; ') + '</div>' : '') +
+      direct.map(lst).join('') + part.map(lst).join('') +
+      (S.editor ? '<div style="margin-top:8px"><button class="btn small" data-act="new" data-space="' + s.id + '">Book this space</button></div>' : '') + '</div>';
+  }).join('');
+  return dateNav('<label>From<input type="time" data-bind="bStart" value="' + S.bStart + '"></label><label>To<input type="time" data-bind="bEnd" value="' + S.bEnd + '"></label>') +
+    '<h2 class="sec" style="margin-top:0">' + fmtLong(S.date) + (S.bStart === '00:00' && S.bEnd === '23:59' ? ' (whole day)' : ' (' + fmtTime(win[0]) + ' to ' + fmtTime(win[1]) + ')') + '</h2>' +
+    '<div class="legend">Green is free, red means booked. The Family Life Center tile shows only whole-building bookings; room bookings show on their own tiles. Pick a time window above to check one event. Cancelled bookings do not block a space.</div>' +
+    '<div class="tiles">' + tiles + '</div>';
+}
+
+/* Week grid */
+function renderWeek() {
+  const ws = addDays(S.date, -S.date.getDay());
+  const days = [...Array(7)].map((_, i) => addDays(ws, i));
+  const today = ymd(new Date());
+  const head = '<tr><th class="sp">Space</th>' + days.map(d => '<th class="' + (ymd(d) === today ? 'today' : '') + '">' + fmtDate(d) + '</th>').join('') + '</tr>';
+  const rows = spaceList().map(s => {
+    const anc = ancestors(s.id);
+    const cells = days.map(d => {
+      const d2 = addDays(d, 1);
+      const on = S.items.filter(i => i.status !== 'Cancelled' && i.start < d2 && i.end > d && i.spaces.length)
+        .sort((a, b) => a.start - b.start);
+      const chip = (i, inh) => '<span class="chip ' + i.status + (inh ? ' inh' : '') + (S.cmap[i.key] ? ' clash' : '') + '" data-act="open" data-key="' + esc(i.key) + '"><b>' +
+        timeRange(i) + (inh ? ' (whole bldg)' : '') + '</b>' + esc(i.title) + '</span>';
+      const own = on.filter(i => i.spaces.includes(s.id)).map(i => chip(i, false));
+      const inh = on.filter(i => !i.spaces.includes(s.id) && i.spaces.some(x => anc.includes(x))).map(i => chip(i, true));
+      return '<td class="day ' + (S.editor ? 'ed' : '') + '"' + (S.editor ? ' data-act="new" data-space="' + s.id + '" data-date="' + ymd(d) + '"' : '') + '>' + own.join('') + inh.join('') + '</td>';
+    }).join('');
+    return '<tr><td class="sp" style="padding-left:' + (6 + s.depth * 14) + 'px">' + esc(s.name) + '</td>' + cells + '</tr>';
+  }).join('');
+  return dateNav() + '<div class="legend">Week of ' + fmtDate(days[0]) + ' to ' + fmtDate(days[6]) + '. Red outline means a double booking. Faded items are the whole building booked.' + (S.editor ? ' Tap an empty spot to add a booking.' : '') + '</div>' +
+    '<div class="wkwrap"><table class="wk">' + head + rows + '</table></div>';
+}
+
+/* List */
+function itemRow(i) {
+  const c = S.cmap[i.key];
+  return '<div class="row" data-act="open" data-key="' + esc(i.key) + '"><div class="t">' + timeRange(i).replace(' to ', '<br>to ') + '</div><div class="m"><b>' + esc(i.title) + '</b> <span class="pill ' + i.status + '">' + i.status + '</span>' +
+    (c ? ' <span class="pill clash">Double booked</span>' : '') +
+    '<small>' + (i.needsSpace ? '<b style="color:var(--red)">Rooms needed. </b>' : '') + (i.spaces.length ? esc(spaceNames(i.spaces)) : 'No rooms chosen yet') + (i.source === 'cal' ? ' | From church calendar' : ' | Entered here' + (writeOn() ? (i.calId ? ' and on church calendar' : ' | Not on church calendar yet') : '')) + (i.auto ? ' | space matched automatically' : '') + ' | ' + progress(i) + '</small></div></div>';
+}
+function renderList() {
+  const today = sod(new Date());
+  let from = today, to = addDays(today, Number(S.fRange) || 30);
+  if (S.fRange === 'past') { from = addDays(today, -30); to = today; }
+  let its = S.items.filter(i => i.end > from && i.start < to);
+  if (S.fSpace) its = its.filter(i => i.spaces.some(x => related(x, S.fSpace)));
+  if (S.fStatus === 'open') its = its.filter(i => i.status === 'Requested' || i.status === 'Approved');
+  else if (S.fStatus) its = its.filter(i => i.status === S.fStatus);
+  its.sort((a, b) => a.start - b.start);
+  let html = '<div class="controls"><label>Show<select data-bind="fRange">' +
+    [['14', 'Next 14 days'], ['30', 'Next 30 days'], ['90', 'Next 90 days'], ['180', 'Next 180 days'], ['past', 'Past 30 days']].map(([v, l]) => '<option value="' + v + '"' + (S.fRange === v ? ' selected' : '') + '>' + l + '</option>').join('') +
+    '</select></label><label>Space<select data-bind="fSpace"><option value="">All spaces</option>' +
+    spaceList().map(s => '<option value="' + s.id + '"' + (S.fSpace === s.id ? ' selected' : '') + '>' + '&nbsp;&nbsp;'.repeat(s.depth) + esc(s.name) + '</option>').join('') +
+    '</select></label><label>Status<select data-bind="fStatus"><option value="">All</option><option value="open"' + (S.fStatus === 'open' ? ' selected' : '') + '>Waiting (Requested or Approved)</option>' +
+    STATUSES.map(s => '<option' + (S.fStatus === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label></div>';
+  if (!its.length) return html + '<div class="card empty">Nothing found for these filters.</div>';
+  let last = '';
+  html += '<div class="card">';
+  for (const i of its) {
+    const k = ymd(i.start);
+    if (k !== last) { html += '</div><div class="dayh">' + fmtLong(i.start) + '</div><div class="card">'; last = k; }
+    html += itemRow(i);
+  }
+  return html + '</div>';
+}
+
+/* Needs attention */
+function renderAttn() {
+  const today = sod(new Date());
+  const conf = S.conf.filter(c => c.a.end > today).sort((x, y) => x.a.start - y.a.start);
+  const need = S.items.filter(i => i.needsSpace && i.end > today && i.status !== 'Cancelled').sort((a, b) => a.start - b.start);
+  const wait = S.items.filter(i => i.status === 'Requested' && i.end > today).sort((a, b) => a.start - b.start);
+  let h = '<h2 class="sec" style="margin-top:0">Double bookings (' + conf.length + ')</h2>';
+  h += conf.length ? conf.map(c => '<div class="card"><b style="color:var(--red)">' + esc(c.text) + '</b><div class="note">' + fmtDate(c.a.start) + '</div>' +
+    [c.a, c.b].map(i => '<div class="row" data-act="open" data-key="' + esc(i.key) + '"><div class="t">' + timeRange(i).replace(' to ', '<br>to ') + '</div><div class="m"><b>' + esc(i.title) + '</b> <span class="pill ' + i.status + '">' + i.status + '</span><small>' + esc(spaceNames(i.spaces)) + (i.source === 'cal' ? ' | From church calendar' : ' | Entered here') + '</small></div></div>').join('') + '</div>').join('')
+    : '<div class="card empty">No double bookings found. </div>';
+  h += '<h2 class="sec">Calendar events that need rooms chosen (' + need.length + ')</h2><div class="note" style="margin-bottom:6px">These came from the church calendar and say FLC or classrooms without saying which rooms. Add the rooms in parentheses on the calendar, such as FLC (Gym &amp; Kitchen) or FLC (Classroom A, B), or open one here and tick the rooms.</div>';
+  h += need.length ? '<div class="card">' + need.slice(0, 80).map(itemRow).join('') + '</div>' : '<div class="card empty">Every calendar event is sorted.</div>';
+  h += '<h2 class="sec">Requests waiting for approval (' + wait.length + ')</h2>';
+  h += wait.length ? '<div class="card">' + wait.map(itemRow).join('') + '</div>' : '<div class="card empty">No requests are waiting.</div>';
+  return h;
+}
+
+/* ---------- Modals ---------- */
+let FORM = null;
+function showModal(html) {
+  $('modalRoot').innerHTML = '<div class="ov" data-act="ovclick"><div class="modal" role="dialog" aria-modal="true">' + html + '</div></div>';
+}
+function closeModal() { $('modalRoot').innerHTML = ''; FORM = null; }
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('toastRoot').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+function openConfirm(title, msg, yes, fn) {
+  S.confirmFn = fn;
+  showModal('<div class="mh"><h2>' + esc(title) + '</h2></div><div class="mb"><p>' + esc(msg) + '</p></div><div class="mf"><button class="btn" data-act="closeModal">Cancel</button><button class="btn dangerfill" data-act="confirmYes">' + esc(yes) + '</button></div>');
+}
+
+function spaceChecks(sel, dis) {
+  return spaceList().map(s => '<label class="chk" style="margin-left:' + (s.depth * 22) + 'px"><input type="checkbox" name="sp" value="' + s.id + '"' + (sel.includes(s.id) ? ' checked' : '') + dis + '> ' + esc(s.name) + '</label>').join('');
+}
+
+function openItem(key, preset) {
+  const it = key ? S.items.find(i => i.key === key) : null;
+  if (key && !it) return;
+  const ed = !!S.editor, dis = ed ? '' : ' disabled';
+  const src = it ? it.source : 'app';
+  let v;
+  if (it) v = { title: it.title, contact: it.contact || '', date: ymd(it.start), start: hhmm(it.start), end: hhmm(it.end), spaces: it.spaces.slice(), status: it.status, checks: it.checks, notes: it.notes };
+  else v = { title: '', contact: '', date: preset.date || ymd(S.date), start: preset.start || '09:00', end: preset.end || '10:00', spaces: preset.space ? [preset.space] : [], status: 'Requested', checks: {}, notes: '' };
+  FORM = { key: key || '', src, ack: false, id: it ? it.id : '', rid: it ? it.rid || '' : '' };
+  let h = '<div class="mh"><h2>' + (it ? esc(it.title) : 'New booking') + '</h2><button class="btn small" data-act="closeModal">Close</button></div><div class="mb" data-form="1">';
+  if (src === 'cal') {
+    h += '<p class="note">This event comes from the church Google Calendar. Change its title or time in Google Calendar. Here you can set the space, status and check offs.' +
+      (it.link ? ' <a href="' + esc(it.link) + '" target="_blank" rel="noopener">Open in Google Calendar</a>' : '') + '</p>' +
+      '<p><b>' + fmtLong(it.start) + '</b><br>' + timeRange(it) + (it.location ? '<br><span class="note">Location on calendar: ' + esc(it.location) + '</span>' : '') + '</p>';
+  } else {
+    h += (writeOn() ? '<p class="note">' + (it && it.calId ? 'This booking is on the church calendar. Saving updates it there too.' : 'Saving adds this booking to the church calendar.') + '</p>' : '') +
+      '<label>Event or renter name<input id="f_title" value="' + esc(v.title) + '"' + dis + '></label>' +
+      '<label>Contact (name, phone or email)<input id="f_contact" value="' + esc(v.contact) + '"' + dis + '></label>' +
+      '<label class="chk"><input type="checkbox" id="f_allday"' + (it && isAllDay(it) ? ' checked' : '') + dis + '> All day</label>' +
+      '<div class="r3"><label>Date<input type="date" id="f_date" value="' + v.date + '"' + dis + '></label><label>Start<input type="time" id="f_start" value="' + v.start + '"' + dis + '></label><label>End<input type="time" id="f_end" value="' + v.end + '"' + dis + '></label></div>';
+  }
+  h += '<label>Status<select id="f_status"' + dis + '>' + STATUSES.map(s => '<option' + (v.status === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label>' +
+    '<fieldset><legend>Spaces used</legend>' + spaceChecks(v.spaces, dis) +
+    (src === 'cal' ? '<div class="note">' + (it.needsSpace ? '<b>This event says FLC or classrooms without naming the rooms.</b> Tick the rooms it uses, or tick Family Life Center (whole building). ' : '') + (it.auto ? 'Rooms were read from the event wording. Confirm or change them. ' : '') + 'Leave all unticked if this event does not use any of these spaces.</div>' +
+    (it.rid ? '<label class="chk"><input type="checkbox" id="f_series"' + (it.ownSpaces ? '' : ' checked') + dis + '> Use these rooms for every date in this repeating event</label>' : '') : '') + '</fieldset>' +
+    '<div id="f_conf"></div>' +
+    '<fieldset><legend>Check off</legend>' + CHECKS.map(c => '<label class="chk" data-ck="' + c.k + '"' + (c.only ? ' data-only="' + c.only + '"' : '') + '><input type="checkbox" id="ck_' + c.k + '"' + (v.checks[c.k] ? ' checked' : '') + dis + '> ' + esc(c.l) + '</label>').join('') + '</fieldset>' +
+    '<label>Notes<textarea id="f_notes"' + dis + '>' + esc(v.notes) + '</textarea></label>';
+  if (it && it.source === 'app' && it.contact === undefined) {}
+  h += '</div><div class="mf">' +
+    (ed && it && src === 'app' ? '<button class="btn danger" data-act="delAsk" style="margin-right:auto">Delete</button>' : '') +
+    '<button class="btn" data-act="closeModal">' + (ed ? 'Cancel' : 'Close') + '</button>' +
+    (ed ? '<button class="btn primary" id="saveBtn" data-act="saveItem">Save</button>' : '') + '</div>';
+  showModal(h);
+  formChanged();
+}
+function gather() {
+  const g = { spaces: [...document.querySelectorAll('input[name="sp"]:checked')].map(x => x.value), status: $('f_status').value, notes: $('f_notes').value, checks: {} };
+  CHECKS.forEach(c => { if ($('ck_' + c.k).checked) g.checks[c.k] = true; });
+  if (FORM.src === 'app') { if ($('f_allday').checked) { $('f_start').value = '00:00'; $('f_end').value = '23:59'; } g.title = $('f_title').value.trim(); g.contact = $('f_contact').value.trim(); g.date = $('f_date').value; g.start = $('f_start').value; g.end = $('f_end').value; }
+  return g;
+}
+function tempItem(g) {
+  let start, end;
+  if (FORM.src === 'app') { if (!g.date || !g.start || !g.end) return null; start = combine(g.date, g.start); end = combine(g.date, g.end); }
+  else { const it = S.items.find(i => i.key === FORM.key); start = it.start; end = it.end; }
+  return { key: FORM.key || 'new', source: FORM.src, title: g.title || '', start, end, spaces: g.spaces, status: g.status };
+}
+function formChanged() {
+  if (!FORM) return;
+  FORM.ack = false;
+  const ad = $('f_allday');
+  if (ad) { $('f_start').disabled = ad.checked || !S.editor; $('f_end').disabled = ad.checked || !S.editor; }
+  const g = gather();
+  document.querySelectorAll('[data-only]').forEach(l => { l.style.display = g.spaces.includes(l.dataset.only) ? '' : 'none'; });
+  const t = tempItem(g);
+  const cf = t && t.end > t.start ? conflictsFor(t, S.items) : [];
+  FORM.conflicts = cf;
+  const box = $('f_conf');
+  if (cf.length) {
+    box.innerHTML = '<div class="confbox"><b>Double booking warning.</b> This overlaps with:<ul>' +
+      cf.map(c => '<li>' + esc(c.other.title) + ', ' + timeRange(c.other) + ' (' + esc(c.text) + ')</li>').join('') + '</ul></div>';
+  } else if (t && g.spaces.length && g.status !== 'Cancelled') {
+    box.innerHTML = '<div class="okbox">No conflicts. These spaces are open at this time.</div>';
+  } else box.innerHTML = '';
+  const b = $('saveBtn');
+  if (b) { b.textContent = cf.length ? 'Save anyway (double booking)' : 'Save'; b.className = 'btn ' + (cf.length ? 'dangerfill' : 'primary'); }
+}
+let SAVING = false;
+async function saveItem() {
+  if (SAVING) return;
+  SAVING = true;
+  const b = $('saveBtn'); if (b) { b.disabled = true; b.dataset.t = b.textContent; b.textContent = 'Saving...'; }
+  try { await saveItemRun(); } finally { SAVING = false; const b2 = $('saveBtn'); if (b2) { b2.disabled = false; if (b2.textContent === 'Saving...') b2.textContent = b2.dataset.t || 'Save'; } }
+}
+async function saveItemRun() {
+  const g = gather();
+  if (FORM.src === 'app') {
+    if (!g.title) return toast('Please enter an event or renter name.');
+    if (!g.date || !g.start || !g.end) return toast('Please fill in the date and times.');
+    if (g.end <= g.start) return toast('End time must be after the start time.');
+    if (!g.spaces.length) return toast('Pick at least one space.');
+  }
+  if (FORM.conflicts && FORM.conflicts.length && !FORM.ack) {
+    FORM.ack = true; $('saveBtn').textContent = 'Yes, save this double booking';
+    $('f_conf').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return toast('This is a double booking. Tap the red button again to save it anyway.');
+  }
+  const who = S.editor, id = FORM.id, src = FORM.src, rid = FORM.rid;
+  const useSeries = !!(rid && $('f_series') && $('f_series').checked);
+  let calId = null, calMsg = '';
+  if (src === 'app' && writeOn()) {
+    const old = id ? S.data.bookings.find(b => b.id === id) : null;
+    calId = (old && old.calEventId) || '';
+    try {
+      if (g.status === 'Cancelled') { if (calId) { await calWrite({ action: 'delete', id: calId }); calId = ''; } }
+      else {
+        const pl = { title: g.title, start: combine(g.date, g.start).toISOString(), end: combine(g.date, g.end).toISOString(), location: spaceNames(g.spaces),
+          description: [g.contact ? 'Contact: ' + g.contact : '', g.notes, 'Entered in Facility Rentals by ' + who].filter(Boolean).join('\n') };
+        const r = await calWrite({ action: calId ? 'update' : 'create', id: calId, ...pl });
+        calId = r.id || calId;
+      }
+    } catch (e) { calMsg = e.message; }
+  }
+  try {
+    await mutate(d => {
+      if (src === 'app') {
+        const rec = { title: g.title, contact: g.contact, date: g.date, start: g.start, end: g.end, spaces: g.spaces, status: g.status, checks: g.checks, notes: g.notes };
+        if (calId !== null) rec.calEventId = calId;
+        const ex = id ? d.bookings.find(b => b.id === id) : null;
+        if (ex) Object.assign(ex, rec, { updatedBy: who, updated: Date.now() });
+        else d.bookings.push({ id: id || 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ...rec, createdBy: who, created: Date.now() });
+      } else {
+        const meta = { status: g.status, checks: g.checks, notes: g.notes, updatedBy: who, updated: Date.now() };
+        if (useSeries) { d.calSeries = d.calSeries || {}; d.calSeries[rid] = { spaces: g.spaces, updatedBy: who, updated: Date.now() }; }
+        else meta.spaces = g.spaces;
+        d.calMeta[id] = meta;
+      }
+    });
+    closeModal(); toast(calMsg ? 'Saved here, but the church calendar was not updated: ' + calMsg : 'Saved');
+  } catch (e) {}
+}
+
+/* Sign in and editors */
+async function hashPin(p) {
+  const s = 'fr1:' + p;
+  try { if (window.crypto && crypto.subtle) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join(''); } } catch (e) {}
+  let h = 5381; for (const ch of s) h = ((h << 5) + h + ch.charCodeAt(0)) >>> 0; return 'x' + h;
+}
+function openSignIn() {
+  if (!S.data.editors.length) return openEditors(true);
+  showModal('<div class="mh"><h2>Sign in to edit</h2><button class="btn small" data-act="closeModal">Close</button></div><div class="mb"><label>Your name<select id="si_name">' +
+    S.data.editors.map(e => '<option>' + esc(e.name) + '</option>').join('') + '</select></label><label>PIN<input id="si_pin" type="password" inputmode="numeric" autocomplete="off"></label><div id="si_msg" class="note" style="color:var(--red)"></div></div><div class="mf"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="doSignIn">Sign in</button></div>');
+}
+async function doSignIn() {
+  const name = $('si_name').value, e = S.data.editors.find(x => x.name === name);
+  if (e && e.pin === await hashPin($('si_pin').value)) {
+    S.editor = name; try { sessionStorage.setItem('fr_editor', name); } catch (x) {}
+    closeModal(); render(); toast('Signed in as ' + name);
+  } else $('si_msg').textContent = 'That PIN does not match. Please try again.';
+}
+function signOut() { S.editor = null; try { sessionStorage.removeItem('fr_editor'); } catch (e) {} render(); }
+function edRow(e, i) {
+  return '<div class="edrow"><input data-ed="name" placeholder="Name" value="' + esc(e.name || '') + '"><input data-ed="pin" type="password" inputmode="numeric" placeholder="' + (e.pin ? 'New PIN (blank keeps current)' : 'PIN, 4 to 8 digits') + '"><button class="btn danger small" data-act="edRemove" data-i="' + i + '">Remove</button></div>';
+}
+let EDLIST = [];
+function openEditors(first) {
+  EDLIST = clone(S.data.editors);
+  if (!EDLIST.length) EDLIST = [{ name: '', pin: '' }];
+  drawEditors(first);
+}
+function drawEditors(first) {
+  showModal('<div class="mh"><h2>' + (first ? 'Set up your editors' : 'Editors') + '</h2><button class="btn small" data-act="closeModal">Close</button></div><div class="mb" id="edbody" data-first="' + (first ? 1 : 0) + '"><p class="note">Up to four people can edit. Everyone else can view. Each editor signs in with a name and a PIN.</p>' +
+    EDLIST.map(edRow).join('') + (EDLIST.length < 4 ? '<button class="btn small" data-act="edAdd">Add another editor</button>' : '') + '<div id="ed_msg" class="note" style="color:var(--red);margin-top:8px"></div></div><div class="mf"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="edSave">Save editors</button></div>');
+}
+function readEdRows() {
+  const rows = [...document.querySelectorAll('#edbody .edrow')];
+  return rows.map((r, i) => ({ name: r.querySelector('[data-ed=name]').value.trim(), newPin: r.querySelector('[data-ed=pin]').value.trim(), old: EDLIST[i] && EDLIST[i].pin ? EDLIST[i].pin : '' }));
+}
+async function saveEditors() {
+  const rows = readEdRows().filter(r => r.name);
+  if (!rows.length) return ($('ed_msg').textContent = 'Add at least one editor.');
+  for (const r of rows) { if (!r.old && !/^\d{4,8}$/.test(r.newPin)) return ($('ed_msg').textContent = 'Each new editor needs a PIN of 4 to 8 digits.'); if (r.newPin && !/^\d{4,8}$/.test(r.newPin)) return ($('ed_msg').textContent = 'PINs must be 4 to 8 digits.'); }
+  if (new Set(rows.map(r => r.name.toLowerCase())).size !== rows.length) return ($('ed_msg').textContent = 'Each editor needs a different name.');
+  const list = []; for (const r of rows) list.push({ name: r.name, pin: r.newPin ? await hashPin(r.newPin) : r.old });
+  const first = $('edbody').dataset.first === '1';
+  try {
+    await mutate(d => { d.editors = list; });
+    if (first || !S.editor) { S.editor = list[0].name; try { sessionStorage.setItem('fr_editor', S.editor); } catch (x) {} }
+    closeModal(); render(); toast('Editors saved');
+  } catch (e) {}
+}
+
+/* Settings */
+let SPLIST = [];
+function openSettings() {
+  const c = cfg(), ed = !!S.editor;
+  SPLIST = clone(S.data.spaces);
+  let h = '<div class="mh"><h2>Settings</h2><button class="btn small" data-act="closeModal">Close</button></div><div class="mb">' +
+    '<fieldset><legend>Connections (saved on this device)</legend>' +
+    '<label>JSONBin Bin ID<input id="c_bin" value="' + esc(c.binId) + '" autocomplete="off"></label>' +
+    '<label>JSONBin Master Key<input id="c_key" type="password" value="' + esc(c.masterKey) + '" autocomplete="off"></label>' +
+    '<label>Google Calendar ID (separate several with commas)<input id="c_cal" value="' + esc(c.calendarId) + '" autocomplete="off"></label>' +
+    '<label>Google Calendar API key<input id="c_gk" type="password" value="' + esc(c.calApiKey) + '" autocomplete="off"></label>' +
+    '<label>Calendar write link (Apps Script web app URL, optional)<input id="c_wu" value="' + esc(c.writeUrl) + '" autocomplete="off"></label>' +
+    '<label>Calendar write password<input id="c_ws" type="password" value="' + esc(c.writeSecret) + '" autocomplete="off"></label>' +
+    '<button class="btn primary" data-act="saveCfg">Save connections and reload</button>' +
+    '<p class="note">Tip: you can paste these four values into the CONFIG lines near the top of the file so everyone gets them automatically.</p></fieldset>';
+  if (ed) {
+    h += '<fieldset><legend>Spaces</legend><div id="splist"></div><button class="btn small" data-act="spAdd">Add a space</button> <button class="btn primary small" data-act="spSave">Save spaces</button>' +
+      '<p class="note">Keywords help the app match calendar events to a space. If an event title, location or description contains a keyword, that space is filled in for you. Put a space under a parent (such as the Family Life Center) so booking the whole building also blocks everything inside it.</p></fieldset>' +
+      (writeOn() ? '<fieldset><legend>Email alerts</legend><label>Send an email to these addresses when a room is booked, changed or deleted (separate with commas)<textarea id="c_em" rows="2" placeholder="Loading..." autocomplete="off"></textarea></label><button class="btn primary small" data-act="emSave">Save email list</button><p class="note">Alerts cover changes made in this app and changes made directly in Google Calendar.</p></fieldset>' : '') +
+      '<fieldset><legend>Editors</legend><button class="btn" data-act="edOpen">Manage editors</button></fieldset>';
+  } else h += '<p class="note">Sign in as an editor to change spaces and editors.</p>';
+  showModal(h + '</div>');
+  if (ed) drawSpaces();
+  if (ed && writeOn() && $('c_em')) calWrite({ action: 'getRecipients' }).then(r => { if ($('c_em')) $('c_em').value = r.emails || ''; }).catch(e => { if ($('c_em')) $('c_em').placeholder = 'Could not load: ' + e.message; });
+}
+function drawSpaces() {
+  $('splist').innerHTML = SPLIST.map((s, i) => '<div class="sprow"><input data-sp="name" data-i="' + i + '" value="' + esc(s.name) + '" placeholder="Space name"><select data-sp="parent" data-i="' + i + '"><option value="">Top level</option>' +
+    SPLIST.filter((p, j) => j !== i).map(p => '<option value="' + p.id + '"' + (s.parent === p.id ? ' selected' : '') + '>Inside: ' + esc(p.name) + '</option>').join('') +
+    '</select><input data-sp="keywords" data-i="' + i + '" value="' + esc(s.keywords || '') + '" placeholder="Keywords, separated by commas"><button class="btn danger small" data-act="spDel" data-i="' + i + '">Remove</button></div>').join('');
+}
+function syncSpaces() {
+  document.querySelectorAll('#splist [data-sp]').forEach(el => { SPLIST[Number(el.dataset.i)][el.dataset.sp] = el.value; });
+}
+
+/* ---------- Actions ---------- */
+const ACT = {
+  tab: d => { S.view = d.v; render(); },
+  shift: async d => { S.date = addDays(S.date, Number(d.n)); await ensureCal(); render(); },
+  today: async () => { S.date = sod(new Date()); await ensureCal(); render(); },
+  open: d => openItem(d.key),
+  new: (d, el, ev) => { if (!S.editor) return; if (ev.target.closest('.chip')) return; openItem('', { space: d.space, date: d.date, start: S.view === 'board' && S.bStart !== '00:00' ? S.bStart : '', end: S.view === 'board' && S.bEnd !== '23:59' ? S.bEnd : '' }); },
+  refresh: async () => { toast('Refreshing...'); try { S.data = await loadData(); S.loadErr = ''; } catch (e) { S.loadErr = e.message; } await ensureCal(true); render(); purgeGone(); },
+  signin: openSignIn, doSignIn, signout: signOut,
+  settings: openSettings, closeModal,
+  ovclick: (d, el, ev) => { if (ev.target === el) closeModal(); },
+  saveItem,
+  delAsk: () => { const id = FORM.id; const bk = S.data.bookings.find(b => b.id === id); openConfirm('Delete this booking?', 'This removes the booking from the app' + (bk && bk.calEventId && writeOn() ? ' and from the church calendar' : '') + '. It cannot be undone.', 'Delete', async () => { if (bk && bk.calEventId && writeOn()) { try { await calWrite({ action: 'delete', id: bk.calEventId }); } catch (e) { toast('Could not remove it from the church calendar: ' + e.message); } } try { await mutate(x => { x.bookings = x.bookings.filter(b => b.id !== id); }); closeModal(); toast('Deleted'); } catch (e) {} }); },
+  confirmYes: () => { const f = S.confirmFn; S.confirmFn = null; if (f) f(); },
+  edAdd: () => { EDLIST = readEdRows().map((r, i) => ({ name: r.name, pin: r.old })); EDLIST.push({ name: '', pin: '' }); drawEditors($('edbody').dataset.first === '1'); },
+  edRemove: d => { const f = $('edbody').dataset.first === '1'; EDLIST = readEdRows().map(r => ({ name: r.name, pin: r.old })); EDLIST.splice(Number(d.i), 1); if (!EDLIST.length) EDLIST = [{ name: '', pin: '' }]; drawEditors(f); },
+  edSave: saveEditors, edOpen: () => openEditors(false),
+  spAdd: () => { syncSpaces(); SPLIST.push({ id: 's' + Date.now().toString(36), name: '', parent: '', keywords: '' }); drawSpaces(); },
+  spDel: d => { syncSpaces(); SPLIST.splice(Number(d.i), 1); drawSpaces(); },
+  spSave: async () => {
+    syncSpaces();
+    const list = SPLIST.filter(s => s.name.trim()).map(s => ({ ...s, name: s.name.trim() }));
+    if (!list.length) return toast('Keep at least one space.');
+    list.forEach(s => { if (s.parent && !list.some(p => p.id === s.parent)) s.parent = ''; });
+    try { await mutate(d => { d.spaces = list; }); closeModal(); toast('Spaces saved'); } catch (e) {}
+  },
+  emSave: async () => { try { const r = await calWrite({ action: 'setRecipients', emails: $('c_em').value.trim() }); $('c_em').value = r.emails || ''; toast('Email list saved'); } catch (e) { toast('Could not save: ' + e.message); } },
+  saveCfg: () => {
+    const o = { binId: $('c_bin').value.trim(), masterKey: $('c_key').value.trim(), calendarId: $('c_cal').value.trim(), calApiKey: $('c_gk').value.trim(), writeUrl: $('c_wu').value.trim(), writeSecret: $('c_ws').value.trim() };
+    try { localStorage.setItem('fr_cfg', JSON.stringify(o)); } catch (e) {}
+    location.reload();
+  }
+};
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act]');
+  if (!el) return;
+  const f = ACT[el.dataset.act];
+  if (f) f(el.dataset, el, ev);
+});
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.dataset.bind) {
+    const k = t.dataset.bind;
+    if (k === 'date') { if (!t.value) return; S.date = parseYmd(t.value); await ensureCal(); }
+    else S[k] = t.value;
+    render(); return;
+  }
+  if (t.closest('[data-form]')) formChanged();
+});
+document.addEventListener('input', ev => { if (ev.target.closest('[data-form]') && ev.target.type !== 'checkbox') formChanged(); });
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') closeModal();
+  if (ev.key === 'Enter' && ev.target.id === 'si_pin') doSignIn();
+});
+
+/* ---------- Start ---------- */
+async function init() {
+  renderChrome();
+  try { S.data = await loadData(); } catch (e) { S.loadErr = e.message + '. Check Settings, and remember saved data only loads from your github.io page, not inside Claude.'; S.data = normalize(null); }
+  try { await ensureCal(true); } catch (e) { S.calErr = 'Calendar problem: ' + e.message; }
+  render(); purgeGone();
+  setInterval(async () => {
+    if ($('modalRoot').innerHTML || S.busy) return;
+    try { S.data = await loadData(); S.loadErr = ''; } catch (e) {}
+    render(); purgeGone();
+  }, 60000);
+  setInterval(async () => { if ($('modalRoot').innerHTML) return; try { await ensureCal(true); } catch (e) {} render(); purgeGone(); }, 120000);
+}
+init();
+</script>
+</body>
+</html>
