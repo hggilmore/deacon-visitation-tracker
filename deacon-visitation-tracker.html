@@ -1,5 +1,6 @@
 <!--
 CHANGELOG
+v1.2.2 - Print opens the report in its own clean page (fixes "Loading preview" hang); if the browser blocks that page, the report downloads as a file you can open and print.
 v1.2.1 - Home screen icon and full screen app mode (iPhone and Android); opens like an app with no browser bars.
 v1.2.0 - Only the person who entered a visit, and the administrator, can delete it; administrator passcode; each device sets its own name; only the administrator removes names or restores backups.
 v1.1.3 - Plain-language connection errors (key refused, bin not found, limit reached, offline); Test connection button shows names on this device and in the shared bin.
@@ -169,7 +170,8 @@ th{background:var(--lav);color:var(--purple)}
    <div><label>Member group</label><select id="rGroup"></select></div>
   </div>
   <button class="btn" onclick="runReport()">Run Report</button>
-  <button class="btn alt" onclick="window.print()">Print</button>
+  <button class="btn alt" onclick="printReport('reportOut','Visitation Report')">Print</button>
+  <button class="btn ghost" onclick="printReport('reportOut','Visitation Report',true)">Save Report File</button>
   <button class="btn ghost" onclick="exportCSV()">Download CSV</button>
   <hr style="border:0;border-top:1px solid var(--line);margin-top:16px">
   <label>Monthly Deacon Report (one page for the board, with active prayer list)</label>
@@ -184,7 +186,7 @@ th{background:var(--lav);color:var(--purple)}
   <div class="printonly"><b>Mt. Zion Baptist Church Prayer List</b> <span id="pPrintDate"></span></div>
   <div class="noprint">
    <button class="btn sm alt" onclick="openPrayerModal()">+ Add request</button>
-   <button class="btn sm ghost" onclick="window.print()">Print</button>
+   <button class="btn sm ghost" onclick="printReport('prayList','Prayer List')">Print</button>
    <label>Show</label>
    <select id="pShow"><option value="Active">Active requests</option><option value="Answered">Answered</option><option value="All">All</option></select>
   </div>
@@ -614,6 +616,28 @@ function runReport(monthLabel){
      '<p style="margin-top:30px">Submitted by: ______________________ &nbsp; Date: ____________</p>';
   }
   $('reportOut').innerHTML=h;
+}
+function printReport(id,title,fileOnly){
+  var src=$(id);
+  if(!src||!src.innerHTML||src.innerHTML.indexOf('press Run Report')>-1){say('Nothing to print','Run a report first.');return}
+  var c=src.cloneNode(true);
+  Array.prototype.slice.call(c.querySelectorAll('button')).forEach(function(b){b.parentNode.removeChild(b)});
+  var css='body{font:13px Arial,Helvetica,sans-serif;color:#222;margin:18px}h2{color:#410942;font-size:16px;margin:14px 0 6px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;vertical-align:top;font-size:12px}th{background:#E9BFF5}.stats{display:block}.stat{display:inline-block;border:1px solid #bbb;padding:6px 10px;margin:0 6px 6px 0}.stat b{display:block;font-size:18px}.muted{color:#666}.item{border-bottom:1px solid #ccc;padding:6px 0}tr{page-break-inside:avoid}.bar{background:#410942;color:#fff;padding:8px 12px;margin-bottom:10px}@media print{.bar{display:none}}';
+  var doc='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Mt. Zion '+title+' '+today()+'</title><style>'+css+'</style></head><body>'+
+   '<div class="bar">Use Ctrl+P (Cmd+P on a Mac) to print or save as PDF.</div>'+
+   '<div class="muted">Printed '+fmtDate(today())+'</div>'+c.innerHTML+'</body></html>';
+  if(!fileOnly){
+    var w=null;try{w=window.open('','_blank')}catch(e){}
+    if(w){
+      w.document.open();w.document.write(doc);w.document.close();
+      setTimeout(function(){try{w.focus();w.print()}catch(e){}},500);
+      return;
+    }
+  }
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([doc],{type:'text/html'}));
+  a.download='mtzion-'+title.toLowerCase().replace(/ /g,'-')+'-'+today()+'.html';a.click();
+  say('Report saved','The report was saved as a file in your Downloads folder. Open it and press Ctrl+P to print.');
 }
 function csvCell(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'}
 function exportCSV(){
