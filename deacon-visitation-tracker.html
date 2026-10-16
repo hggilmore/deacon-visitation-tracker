@@ -1,5 +1,6 @@
 <!--
 CHANGELOG
+v1.3.2 - Setup link: Settings has Copy setup link; opening that link on another phone or computer connects it to the shared bin automatically, no pasting of the key or Bin ID.
 v1.3.1 - New member group Less than one year (also applies automatically to anyone who joined in the last 12 months); Date joined church field on each name; joined date shown in the Members list.
 v1.3.0 - Design refresh: church header with welcome line, Today summary, phone tab bar at the bottom with icons, member initials and contact status, softer cards, church header on printed reports.
 v1.2.2 - Print opens the report in its own clean page (fixes "Loading preview" hang); if the browser blocks that page, the report downloads as a file you can open and print.
@@ -250,6 +251,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-of
   <button class="btn ghost" onclick="pushCloud(true)">Send to JSONBin</button>
   <button class="btn ghost" onclick="testConnection()">Test connection</button>
   <div id="status"></div>
+ </div>
+ <div class="card">
+  <h2>Setup link for another phone or computer</h2>
+  <p class="muted">Makes a link that connects a device to the shared list with one tap, so nobody pastes the Master Key or Bin ID. Anyone who has the link can reach the saved data, so send it only to the deacons and pastor, by text or email, and do not post it online.</p>
+  <button class="btn alt" onclick="makeSetupLink()">Copy setup link</button>
+  <input id="setupLink" readonly class="hide" style="margin-top:10px" onclick="this.select()">
+  <div id="setupMsg" class="muted" style="margin-top:6px"></div>
  </div>
  <div class="card">
   <h2>Your name and permissions</h2>
@@ -824,6 +832,31 @@ $('importFile').addEventListener('change',function(e){
 });
 
 function renderAll(){renderToday();fillSelects();fillExtra();renderFollow();renderHistory();renderMembers();renderPrayer();renderAdmin()}
+function b64u(t){return btoa(unescape(encodeURIComponent(t))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function unb64u(t){t=t.replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';return decodeURIComponent(escape(atob(t)))}
+function makeSetupLink(){
+  if(!(cfg.key&&cfg.bin)){say('Not connected yet','Save the Master Key and Bin ID in Saving your data first, then come back for the link.');return}
+  var base=location.href.split('#')[0];
+  var url=base+'#setup='+b64u(JSON.stringify({k:cfg.key,b:cfg.bin}));
+  var box=$('setupLink');box.value=url;box.classList.remove('hide');box.focus();box.select();
+  var ok=false;
+  try{ok=document.execCommand('copy')}catch(e){}
+  if(!ok&&navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(function(){$('setupMsg').textContent='Link copied. Paste it into a text or email.'},function(){});}
+  $('setupMsg').textContent=ok?'Link copied. Paste it into a text or email.':'Press and hold the box above, choose Copy, then paste it into a text or email.';
+}
+var setupDone=false;
+(function(){
+  var h=location.hash||'';
+  if(h.indexOf('#setup=')!==0)return;
+  try{
+    var o=JSON.parse(unb64u(h.slice(7)));
+    if(o&&o.k&&o.b){
+      localStorage.setItem(LSC,JSON.stringify({key:o.k,bin:o.b}));
+      setupDone=true;
+    }
+  }catch(e){}
+  try{history.replaceState(null,'',location.href.split('#')[0])}catch(e){location.hash=''}
+})();
 loadLocal();
 $('sKey').value=cfg.key||'';$('sBin').value=cfg.bin||'';
 var d0=new Date();d0.setDate(1);
@@ -834,6 +867,7 @@ renderAll();resetVisitForm();
 $('rMonth').value=today().slice(0,7);
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&cloudReady())pullCloud(false)});
 if(cloudReady())pullCloud(false);
+if(setupDone)say('Connected','This device is now connected to the shared list. Your names will load in a moment. Next, open Settings and save your name, then add this page to your Home Screen.');
 </script>
 </body>
 </html>
